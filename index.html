@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050914">
+<meta name="description" content="Axium Cyber LLC — security-minded technology, digital defense, and next-generation cyber solutions.">
+<title>Axium Cyber LLC | Defend What's Next</title>
+<style>
+:root{--bg:#050914;--panel:#091326;--cyan:#16caff;--blue:#146bff;--gold:#f8b943;--text:#f4f8ff;--muted:#a9bad3;--line:rgba(65,174,255,.22)}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:86px}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;background:radial-gradient(ellipse at 50% 0%,rgba(0,107,255,.15),transparent 48%),linear-gradient(transparent 97%,rgba(16,202,255,.04) 100%);background-size:auto,100% 5px}
+a{color:inherit;text-decoration:none}.wrap{width:min(1180px,calc(100% - 44px));margin:auto}
+nav{height:78px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:rgba(5,9,20,.84);backdrop-filter:blur(18px);position:sticky;top:0;z-index:20}
+.brand{display:flex;align-items:center;gap:12px;font-weight:900;letter-spacing:.12em}.brand-mark{width:35px;height:35px;border:1px solid var(--gold);display:grid;place-items:center;clip-path:polygon(50% 0,100% 100%,0 100%);color:var(--cyan);font-size:18px;text-shadow:0 0 12px var(--cyan)}.brand span{display:block;font-size:10px;letter-spacing:.34em;color:var(--cyan);margin-top:3px}
+.navlinks{display:flex;gap:30px;align-items:center;color:#d1dced;font-size:12px;text-transform:uppercase;letter-spacing:.14em}.navlinks a:hover{color:var(--cyan)}.nav-cta,.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:13px 18px;border:1px solid var(--cyan);background:linear-gradient(110deg,rgba(0,145,255,.2),rgba(0,34,90,.12));color:#fff;text-transform:uppercase;font-size:11px;font-weight:800;letter-spacing:.15em;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));transition:.25s}.nav-cta:hover,.btn:hover{background:var(--cyan);color:#03101e;box-shadow:0 0 26px rgba(22,202,255,.32);transform:translateY(-2px)}
+.menu-toggle{display:none;background:none;color:white;border:1px solid var(--line);padding:8px 11px}
+.hero{min-height:690px;display:grid;grid-template-columns:.88fr 1.12fr;align-items:center;gap:18px;padding:55px 0 62px;position:relative}.hero-copy{position:relative;z-index:2}.eyebrow{color:var(--cyan);font-size:11px;letter-spacing:.28em;text-transform:uppercase;display:flex;align-items:center;gap:12px}.eyebrow:before{content:"";width:28px;height:1px;background:var(--gold);box-shadow:0 0 12px var(--gold)}h1{font-size:clamp(44px,6.3vw,78px);line-height:.98;letter-spacing:-.055em;margin:23px 0 24px;font-weight:950}h1 em{font-style:normal;color:transparent;-webkit-text-stroke:1px var(--cyan);text-shadow:0 0 24px rgba(22,202,255,.2)}.hero-copy p{max-width:490px;color:var(--muted);font-size:16px;line-height:1.8}.hero-actions{display:flex;gap:13px;flex-wrap:wrap;margin-top:30px}.btn.gold{border-color:var(--gold);background:rgba(248,185,67,.08)}.hero-note{margin-top:28px;font-size:10px;color:#7085a5;letter-spacing:.16em;text-transform:uppercase}.hero-art{position:relative;margin-right:-6vw}.hero-art:before{content:"";position:absolute;inset:12% 6%;border-radius:50%;background:rgba(0,128,255,.18);filter:blur(60px)}.hero-art img{position:relative;width:100%;display:block;filter:drop-shadow(0 0 28px rgba(0,111,255,.18));mask-image:linear-gradient(to right,transparent 0%,black 8%,black 92%,transparent 100%);animation:float 7s ease-in-out infinite}.scanline{height:1px;background:linear-gradient(90deg,transparent,var(--cyan),var(--gold),transparent);box-shadow:0 0 15px var(--cyan);opacity:.8}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}@keyframes pulse{0%,100%{opacity:.65}50%{opacity:1}}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:linear-gradient(100deg,rgba(10,28,56,.75),rgba(5,10,23,.75));margin:0 auto 100px}.metric{padding:25px 30px;border-right:1px solid var(--line)}.metric:last-child{border:0}.metric strong{display:block;font-size:23px;color:var(--gold);letter-spacing:.03em}.metric span{display:block;margin-top:7px;color:var(--muted);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+section{padding:55px 0 85px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:24px;margin-bottom:34px}.section-head h2{font-size:clamp(30px,4vw,48px);letter-spacing:-.04em;margin:12px 0 0}.section-head p{max-width:390px;color:var(--muted);font-size:14px;line-height:1.7;margin:0}.services{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.service{position:relative;min-height:245px;padding:27px;border:1px solid var(--line);background:linear-gradient(145deg,rgba(12,29,56,.82),rgba(5,10,23,.9));overflow:hidden;transition:.3s}.service:after{content:"";position:absolute;width:130px;height:130px;border:1px solid rgba(22,202,255,.12);right:-50px;bottom:-50px;transform:rotate(45deg)}.service:hover{border-color:rgba(22,202,255,.72);transform:translateY(-5px);box-shadow:0 12px 35px rgba(0,81,180,.12)}.service .num{font-size:10px;letter-spacing:.2em;color:var(--gold)}.service .glyph{font-size:27px;color:var(--cyan);margin:24px 0 16px;text-shadow:0 0 15px rgba(22,202,255,.5)}.service h3{font-size:17px;margin:0 0 12px;letter-spacing:.03em}.service p{color:var(--muted);font-size:13px;line-height:1.75;margin:0}
+.about{display:grid;grid-template-columns:1fr 1fr;gap:70px;align-items:center}.about-visual{min-height:340px;border:1px solid var(--line);background:radial-gradient(circle at 50% 48%,rgba(0,136,255,.2),transparent 37%),linear-gradient(135deg,#07142b,#050914);display:grid;place-items:center;position:relative;overflow:hidden}.about-visual:before,.about-visual:after{content:"";position:absolute;width:260px;height:260px;border:1px solid rgba(22,202,255,.35);transform:rotate(45deg)}.about-visual:after{width:190px;height:190px;border-color:rgba(248,185,67,.55);transform:rotate(22deg)}.sigil{font-size:90px;color:var(--cyan);text-shadow:0 0 30px #007cff;z-index:1}.visual-label{position:absolute;bottom:18px;left:20px;color:var(--gold);font-size:9px;letter-spacing:.24em;text-transform:uppercase}.about-copy h2{font-size:clamp(32px,4vw,47px);line-height:1.08;letter-spacing:-.04em;margin:15px 0 20px}.about-copy p{color:var(--muted);font-size:14px;line-height:1.9}.checks{display:grid;gap:13px;margin-top:25px}.check{display:flex;align-items:center;gap:12px;font-size:12px;letter-spacing:.05em}.check b{color:var(--cyan);font-size:15px}
+.cta-panel{position:relative;overflow:hidden;border:1px solid rgba(22,202,255,.45);background:radial-gradient(ellipse at 85% 50%,rgba(0,95,255,.22),transparent 45%),linear-gradient(110deg,#0b1930,#060b17);padding:48px;display:flex;align-items:center;justify-content:space-between;gap:25px}.cta-panel h2{font-size:clamp(28px,4vw,44px);margin:12px 0}.cta-panel p{color:var(--muted);max-width:520px;line-height:1.7;font-size:14px}.cta-panel .btn{white-space:nowrap}
+.contact-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:50px}.contact-info h2{font-size:38px;line-height:1.1;letter-spacing:-.04em}.contact-info p{color:var(--muted);font-size:14px;line-height:1.8}.contact-line{margin-top:24px;padding-top:17px;border-top:1px solid var(--line);font-size:10px;letter-spacing:.17em;color:var(--cyan);text-transform:uppercase}
+form{display:grid;grid-template-columns:1fr 1fr;gap:15px}label{display:grid;gap:8px;color:#a8bad2;font-size:10px;letter-spacing:.16em;text-transform:uppercase}label.full{grid-column:1/-1}input,textarea,select{width:100%;border:1px solid rgba(88,145,201,.3);background:#070e1c;color:white;padding:14px;font:inherit;font-size:13px;outline:none;border-radius:0}input:focus,textarea:focus,select:focus{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(22,202,255,.08)}textarea{min-height:125px;resize:vertical}form button{grid-column:1/-1;justify-self:start;cursor:pointer}
+footer{border-top:1px solid var(--line);padding:26px 0;color:#7386a3;font-size:10px;letter-spacing:.12em}.footer-inner{display:flex;align-items:center;justify-content:space-between;gap:20px}.footer-links{display:flex;gap:20px}.footer-links a:hover{color:var(--cyan)}
+@media(max-width:850px){.hero{grid-template-columns:1fr;padding-top:55px;gap:0}.hero-copy{max-width:660px}.hero-art{margin:0;margin-top:-5px}.hero-art img{max-height:480px;object-fit:contain}.services{grid-template-columns:1fr 1fr}.about{gap:35px}.contact-grid{gap:28px}.navlinks{gap:16px}}
+@media(max-width:620px){.wrap{width:min(100% - 30px,1180px)}nav{height:68px}.brand{font-size:12px}.menu-toggle{display:block}.navlinks{display:none;position:absolute;top:67px;left:0;right:0;background:#060c1b;border-bottom:1px solid var(--line);padding:20px;flex-direction:column;align-items:stretch}.navlinks.open{display:flex}.nav-cta{display:none}.hero{min-height:0;padding:56px 0 35px}.hero-art{margin-top:10px}.metrics{grid-template-columns:1fr;margin-bottom:45px}.metric{border-right:0;border-bottom:1px solid var(--line);padding:18px 22px}.metric:last-child{border-bottom:0}section{padding:35px 0 60px}.section-head{display:block}.section-head p{margin-top:18px}.services{grid-template-columns:1fr}.service{min-height:215px}.about{grid-template-columns:1fr}.about-visual{min-height:270px}.cta-panel{padding:28px;display:block}.cta-panel .btn{margin-top:12px}.contact-grid{grid-template-columns:1fr}form{grid-template-columns:1fr}label.full,form button{grid-column:auto}.footer-inner{align-items:flex-start;flex-direction:column}.footer-links{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;width:100%">
+    <a class="brand" href="#home" aria-label="Axium Cyber home"><div class="brand-mark">A</div><div>AXIUM<span>CYBER LLC</span></div></a>
+    <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+    <div class="navlinks" id="navlinks"><a href="#services">Capabilities</a><a href="#about">Our approach</a><a href="#contact">Contact</a></div>
+    <a class="nav-cta" href="#contact">Start a conversation ↗</a>
+  </div>
+</nav>
+<main id="home">
+  <div class="wrap hero">
+    <div class="hero-copy">
+      <div class="eyebrow">Independent minds. Digital defense.</div>
+      <h1>DEFEND<br>WHAT'S <em>NEXT.</em></h1>
+      <p>Built for a world that never stands still. Axium Cyber brings a forward-thinking, security-first mindset to the technology challenges that matter most.</p>
+      <div class="hero-actions"><a class="btn" href="#services">Explore capabilities <span>↘</span></a><a class="btn gold" href="#contact">Let's connect <span>↗</span></a></div>
+      <div class="hero-note">Precision · Resilience · Relentless curiosity</div>
+    </div>
+    <div class="hero-art"><img src="assets/axium-hero.png" alt="Axium Cyber neon gold and blue Anubis cyberpunk emblem"></div>
+  </div>
+  <div class="wrap"><div class="scanline"></div>
+    <div class="metrics">
+      <div class="metric"><strong>SECURITY-FIRST</strong><span>Think ahead, reduce risk</span></div>
+      <div class="metric"><strong>BUILT FOR CHANGE</strong><span>Modern, adaptable thinking</span></div>
+      <div class="metric"><strong>HUMAN-CENTERED</strong><span>Technology with purpose</span></div>
+    </div>
+  </div>
+  <section id="services"><div class="wrap">
+    <div class="section-head"><div><div class="eyebrow">What we focus on</div><h2>CAPABILITIES IN<br><em style="color:var(--cyan);font-style:normal">THE DIGITAL ARENA.</em></h2></div><p>Clear thinking. Strong foundations. A relentless focus on helping people and organizations navigate a connected world.</p></div>
+    <div class="services">
+      <article class="service"><div class="num">01 / DIGITAL DEFENSE</div><div class="glyph">⌁</div><h3>Cybersecurity Mindset</h3><p>Security-aware planning and practical guidance to help identify exposure, strengthen habits, and build more resilient systems.</p></article>
+      <article class="service"><div class="num">02 / SYSTEMS & AUTOMATION</div><div class="glyph">⌘</div><h3>Smarter Workflows</h3><p>Explore efficient digital workflows, automation concepts, and tools that reduce repetitive work without losing control.</p></article>
+      <article class="service"><div class="num">03 / DIGITAL INTELLIGENCE</div><div class="glyph">⟁</div><h3>Research & Readiness</h3><p>Structured research, technical exploration, and risk-aware problem solving to help make complex decisions more manageable.</p></article>
+    </div>
+  </div></section>
+  <section id="about"><div class="wrap about">
+    <div class="about-visual"><div class="sigil">𓃥</div><div class="visual-label">AXIUM // BEYOND THE EXPECTED</div></div>
+    <div class="about-copy"><div class="eyebrow">The Axium standard</div><h2>THE FUTURE DOESN'T WAIT.<br><span style="color:var(--cyan)">NEITHER SHOULD YOU.</span></h2><p>Axium Cyber LLC is built around a simple idea: digital strength starts with curiosity, discipline, and a willingness to keep learning. We bring an independent, creative approach to technology—with security in the conversation from day one.</p><p>Our goal is to make the complicated feel clearer and help turn big ideas into practical next steps.</p><div class="checks"><div class="check"><b>✦</b> Thoughtful, security-minded decisions</div><div class="check"><b>✦</b> Practical solutions over empty hype</div><div class="check"><b>✦</b> A commitment to continuous learning</div></div></div>
+  </div></section>
+  <section><div class="wrap"><div class="cta-panel"><div><div class="eyebrow">Your next move starts here</div><h2>LET'S BUILD SOMETHING<br><span style="color:var(--cyan)">MORE SECURE.</span></h2><p>Have an idea, a challenge, or a project you want to explore? Start a conversation with Axium Cyber.</p></div><a class="btn gold" href="#contact">Contact Axium ↗</a></div></div></section>
+  <section id="contact"><div class="wrap contact-grid">
+    <div class="contact-info"><div class="eyebrow">Open a channel</div><h2>MAKE YOUR<br>MOVE.</h2><p>Tell us what you're working on or what you'd like to solve. This demo form opens an email draft in your default mail app—no message is stored on this website.</p><div class="contact-line">AXIUM CYBER LLC · INDEPENDENT BY DESIGN</div></div>
+    <form id="contactForm">
+      <label>Your name<input name="name" placeholder="Name" required></label>
+      <label>Your email<input name="email" type="email" placeholder="you@example.com" required></label>
+      <label class="full">What are you exploring?<select name="topic"><option>Cybersecurity</option><option>Automation & workflows</option><option>Technical research</option><option>Partnership / other</option></select></label>
+      <label class="full">Message<textarea name="message" placeholder="Give us a little context..." required></textarea></label>
+      <button class="btn" type="submit">Prepare message ↗</button>
+      <div id="formNote" class="full" style="font-size:12px;color:var(--cyan);line-height:1.6" aria-live="polite"></div>
+    </form>
+  </div></section>
+</main>
+<footer><div class="wrap footer-inner"><div>© <span id="year"></span> AXIUM CYBER LLC. ALL RIGHTS RESERVED.</div><div class="footer-links"><a href="#home">Back to top ↑</a><a href="#services">Capabilities</a><a href="#contact">Contact</a></div></div></footer>
+<script>
+const toggle=document.getElementById('menuToggle'), links=document.getElementById('navlinks');
+toggle.addEventListener('click',()=>{const open=links.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'✕':'☰'});
+links.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{links.classList.remove('open');toggle.setAttribute('aria-expanded','false');toggle.textContent='☰'}));
+document.getElementById('year').textContent=new Date().getFullYear();
+document.getElementById('contactForm').addEventListener('submit',e=>{e.preventDefault();const d=new FormData(e.currentTarget);const subject=encodeURIComponent('Axium Cyber inquiry — '+d.get('topic'));const body=encodeURIComponent('Name: '+d.get('name')+'\nEmail: '+d.get('email')+'\nTopic: '+d.get('topic')+'\n\n'+d.get('message'));document.getElementById('formNote').textContent='Opening your email app with a prepared message. You can review it before sending.';window.location.href='mailto:?subject='+subject+'&body='+body});
+</script>
+</body>
+</html>
