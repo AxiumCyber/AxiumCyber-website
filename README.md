@@ -7,7 +7,7 @@ A responsive public website and Cloudflare-backed staff operations portal for Ax
 - `index.html` — public website
 - `staff.html` and `staff-app.js` — staff dashboard and API client
 - `functions/api/[[path]].js` — Cloudflare Pages API with local sessions, password hashing, and server-side role checks
-- `migrations/0001_initial.sql` and `migrations/0002_local_staff_auth.sql` — D1 schema for staff credentials, customers, support, authorized engagements, and forensic metadata
+- `migrations/0001_initial.sql`, `migrations/0002_local_staff_auth.sql`, and `migrations/0003_bootstrap_lock.sql` — D1 schema and one-time setup lock
 - `wrangler.toml` — Pages configuration, D1/KV bindings, and non-secret variables; replace its placeholders before deploying
 - `assets/axium-hero.png` — Axium Cyber hero artwork
 - `_headers` — HTTP security headers and staff-page Content Security Policy
@@ -39,13 +39,13 @@ Cloudflare menu labels can change. Confirm the Pages project uses the repository
 
 ## Apply the Database Schema
 
-Open the D1 database in the Cloudflare dashboard and use its **Console / SQL editor**. Open `migrations/0001_initial.sql` in the repository, copy its SQL into the D1 editor, and run it. After it succeeds, repeat with `migrations/0002_local_staff_auth.sql`. Apply them in this order, once each.
+Open the D1 database in the Cloudflare dashboard and use its **Console / SQL editor**. Open each migration in the repository, copy its SQL into the D1 editor, and run it in this order, once each: `0001_initial.sql`, `0002_local_staff_auth.sql`, then `0003_bootstrap_lock.sql`. Confirm each migration succeeds before running the next.
 
 The migrations create the staff directory and credential/session tables, customer records, support tickets and notes, security engagement approvals, forensic case metadata, evidence hashes, and append-only audit/custody event tables. They do not create a default account or password.
 
 ## Create the First Administrator
 
-After the migrations are applied and the `BOOTSTRAP_SECRET` Pages secret is set, open `/staff.html`. The first-admin form defaults the username to `admin`; set a strong password and optionally enter an email. The password is salted and hashed by the API. After the first Super Admin account is created successfully, remove `BOOTSTRAP_SECRET` from **Pages → Settings → Variables and Secrets**.
+After the migrations are applied and the `BOOTSTRAP_SECRET` Pages secret is set, open `/staff.html`. The first-admin form defaults the username to `admin`; set a strong password and optionally enter an email. The password is salted and hashed by the API. The D1 bootstrap lock makes this setup one-time, even if all Super Admin accounts are later deleted. After the first Super Admin account is created successfully, remove `BOOTSTRAP_SECRET` from **Pages → Settings → Variables and Secrets**.
 
 Super Admin-created accounts also require a 12-128 character temporary password and must change it at first sign-in. Email is optional. If configured, Resend sends a notice but never sends the password; share it with the user through a separate secure channel. No default password is shipped.
 
@@ -61,10 +61,11 @@ After the automatic deployment completes, verify:
 2. Sign in with an active username/password. The progress indicator should show **Access granted** only after the API verifies the password and creates a session.
 3. Create a staff account with and without an email; confirm the email field is optional and the new account must change its temporary password.
 4. Add a test customer and confirm it appears after reload. Remove test data before using real customer records.
-5. Delete a test account as Super Admin; confirm it disappears, its sessions are revoked, and the last active Super Admin cannot be deleted.
-6. Confirm role restrictions: Super Admin manages staff; Support handles the support queue and customer directory; Technical Team sees technical engagements; Forensic Analyst sees forensic cases.
+5. As Super Admin or Support, create a ticket for the test customer. Open it from the queue, confirm details and notes load, add a staff note, and reopen it to confirm the note persists.
+6. Delete a test account as Super Admin; confirm it disappears, its sessions are revoked, and the last active Super Admin cannot be deleted.
+7. Confirm role restrictions: Super Admin manages staff; Support handles the support queue and customer directory; Technical Team sees technical engagements; Forensic Analyst sees forensic cases.
 
-If sign-in fails, check Pages function logs, D1 binding name (`DB`), both migration statuses, the `BOOTSTRAP_SECRET` setup state, username/status in `staff_users`, and that the account is not deleted. Configure edge/API rate limits before production use.
+If sign-in fails, check Pages function logs, D1 binding name (`DB`), all three migration statuses, the `BOOTSTRAP_SECRET` setup state, username/status in `staff_users`, and that the account is not deleted. Configure Cloudflare edge rate limits for `/api/auth/login` and `/api/bootstrap` before production use.
 
 ## Security Tools and Forensics Boundaries
 
@@ -72,6 +73,7 @@ If sign-in fails, check Pages function logs, D1 binding name (`DB`), both migrat
 - Scanner execution intentionally returns `503` until a separate, network-isolated runner is deployed. A runner must enforce customer-owned allowlists, written authorization, exact scope, dates, approvals, rate/resource limits, and audit logging. Do not run scans against systems without explicit authorization.
 - Forensic records contain case/evidence metadata, SHA-256 values, and custody events, not evidence files. The hash history is tamper-evident only, not a legally certified chain of custody. Use a separate access-controlled evidence vault with retention controls and validate jurisdictional requirements with counsel.
 - Multi-factor authentication is not implemented in this local-password flow. Add an MFA-capable identity layer or private network gateway before using it for high-risk or regulated data.
+- Login attempts are throttled per IP and username/IP pair; first-admin setup is throttled per IP. Keep Cloudflare edge rate limiting enabled as a second layer.
 - Staff deletion revokes sessions and anonymizes the account while retaining audit/history references required by related records; it is not a hard purge of historical audit data.
 - No system is “foolproof.” Configure edge/API rate limits, backups and restore tests, retention/deletion procedures, monitoring, and an independent security review before storing real customer or evidentiary data.
 

@@ -52,11 +52,14 @@ async function readJson(request) {
   if (!request.headers.get('content-type')?.toLowerCase().includes('application/json')) fail(415, 'Send a JSON request body.');
   const text = await request.text();
   if (encoder.encode(text).byteLength > 32768) fail(413, 'Request body is too large.');
+  let value;
   try {
-    return JSON.parse(text);
+    value = JSON.parse(text);
   } catch {
     fail(400, 'Request body is not valid JSON.');
   }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail(400, 'JSON request body must be an object.');
+  return value;
 }
 
 function text(value, max = 200) {
@@ -128,6 +131,23 @@ async function listTickets(env, user, url) {
      ORDER BY CASE t.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END, t.created_at DESC LIMIT 250`
   ).bind(lane, lane, status, status).all();
   return respond({ tickets: result.results });
+}
+
+async function getTicket(env, user, ticketId) {
+  const lane = ticketRoles(user);
+  const ticket = await env.DB.prepare(
+    `SELECT t.id, t.subject, t.description, t.category, t.priority, t.status, t.assigned_role, t.created_at, t.updated_at,
+            c.id AS customer_id, c.display_name AS customer_name, c.email AS customer_email, c.organization
+     FROM support_tickets t JOIN customers c ON c.id = t.customer_id WHERE t.id = ?`
+  ).bind(ticketId).first();
+  if (!ticket) fail(404, 'Ticket not found.');
+  if (lane && lane !== ticket.assigned_role) fail(403, 'Ticket is outside your assigned team lane.');
+  const notes = await env.DB.prepare(
+    `SELECT n.id, n.body, n.created_at, u.username AS author
+     FROM support_notes n JOIN staff_users u ON u.id = n.created_by
+     WHERE n.ticket_id = ? ORDER BY n.created_at ASC LIMIT 100`
+  ).bind(ticketId).all();
+  return respond({ ticket, notes: notes.results });
 }
 
 async function createTicket(request, env, user) {
@@ -259,8 +279,8 @@ async function approveEngagement(env, user, engagementId) {
   const timestamp = now();
   const result = await env.DB.prepare(
     `UPDATE security_engagements SET status = 'APPROVED', approved_by = ?
-     WHERE id = ? AND status = 'DRAFT' AND created_by <> ? AND starts_at <= ? AND expires_at > ?`
-  ).bind(user.id, engagementId, user.id, timestamp, timestamp).run();
+      WHERE id = ? AND status = 'DRAFT' AND created_by <> ? AND expires_at > ?`
+    ).bind(user.id, engagementId, user.id, timestamp).run();
   if (!result.meta.changes) fail(409, 'Engagement cannot be approved: it may be expired, not a draft, missing, or created by this approver.');
   await audit(env, user.id, 'engagement.approved', 'engagement', engagementId);
   return respond({ ok: true, status: 'APPROVED' });
@@ -396,6 +416,7 @@ async function route(request, env) {
   if (path === '/api/audit' && method === 'GET') return listAudit(env, user);
 
   const ticketMatch = path.match(/^\/api\/tickets\/([\w-]+)$/);
+  if (ticketMatch && method === 'GET') return getTicket(env, user, ticketMatch[1]);
   if (ticketMatch && method === 'PATCH') return updateTicket(request, env, user, ticketMatch[1]);
   const userMatch = path.match(/^\/api\/users\/([\w-]+)$/);
   if (userMatch && method === 'PATCH') return updateUserRole(request, env, user, userMatch[1]);
@@ -411,14 +432,23 @@ async function route(request, env) {
   if (path === '/api/security-tools' && method === 'GET') {
     requireRole(user, ['SUPER ADMIN', 'TECHNICAL TEAM']);
     const cacheKey = 'security-tool-catalog:v1';
-    const cached = await env.PORTAL_CACHE?.get(cacheKey, 'json');
+    let cached;
+    try {
+      cached = await env.PORTAL_CACHE?.get(cacheKey, 'json');
+    } catch (error) {
+      console.warn('Security catalog cache read failed', error);
+    }
     if (cached) return respond(cached);
     const catalog = {
       execution: 'DISABLED',
       categories: [...TEST_CATEGORIES],
       note: 'Tool execution requires a separately deployed, network-isolated runner.'
     };
-    await env.PORTAL_CACHE?.put(cacheKey, JSON.stringify(catalog), { expirationTtl: 86400 });
+    try {
+      await env.PORTAL_CACHE?.put(cacheKey, JSON.stringify(catalog), { expirationTtl: 86400 });
+    } catch (error) {
+      console.warn('Security catalog cache write failed', error);
+    }
     return respond(catalog);
   }
   if (path === '/api/test-runs' && method === 'POST') fail(503, 'No isolated test runner is configured. Tests are not executed by this portal.');
@@ -429,7 +459,10 @@ export async function onRequest({ request, env }) {
   try {
     return await route(request, env);
   } catch (error) {
-    if (error instanceof ApiError) return respond({ error: error.message }, error.status);
+    if (error instanceof ApiError) {
+      const headers = error.status === 429 ? { 'Retry-After': '900' } : {};
+      return respond({ error: error.message }, error.status, headers);
+    }
     console.error('Staff API request failed', error);
     return respond({ error: 'The request could not be completed.' }, 500);
   }
@@ -529,14 +562,34 @@ async function setupStatus(env) {
     `SELECT id FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE'
       AND deleted_at IS NULL AND password_hash IS NOT NULL LIMIT 1`
   ).first();
-  return respond({ setupRequired: !admin, setupConfigured: Boolean(env.BOOTSTRAP_SECRET) });
+  const setup = await env.DB.prepare(
+    "SELECT setting_value FROM portal_settings WHERE setting_key = 'bootstrap_completed'"
+  ).first();
+  if (admin && setup?.setting_value !== '1') {
+    await env.DB.prepare(
+      "UPDATE portal_settings SET setting_value = '1', updated_at = ? WHERE setting_key = 'bootstrap_completed'"
+    ).bind(now()).run();
+  }
+  return respond({ setupRequired: !admin && setup?.setting_value !== '1', setupConfigured: Boolean(env.BOOTSTRAP_SECRET) });
 }
 
 async function bootstrapAdmin(request, env) {
   if (!env.BOOTSTRAP_SECRET || env.BOOTSTRAP_SECRET.length < 32) fail(503, 'First-admin setup secret is not configured.');
   const body = await readJson(request);
-  if (!sameSecret(body.setupSecret, env.BOOTSTRAP_SECRET)) fail(403, 'First-admin setup secret is invalid.');
+  const clientAddress = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const attemptKey = `bootstrap:${await sha256(clientAddress)}`;
+  const attempt = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE attempt_key = ?').bind(attemptKey).first();
+  if (attempt?.locked_until && Date.parse(attempt.locked_until) > Date.now()) fail(429, 'Too many setup attempts. Try again in 15 minutes.');
+  if (!sameSecret(body.setupSecret, env.BOOTSTRAP_SECRET)) {
+    await recordLoginFailure(env, attemptKey, 5);
+    fail(403, 'First-admin setup secret is invalid.');
+  }
+  await env.DB.prepare('DELETE FROM login_attempts WHERE attempt_key = ?').bind(attemptKey).run();
   const { username, email, password } = staffInput(body);
+  const setup = await env.DB.prepare(
+    "SELECT setting_value FROM portal_settings WHERE setting_key = 'bootstrap_completed'"
+  ).first();
+  if (setup?.setting_value === '1') fail(409, 'First-admin setup is already complete.');
   const existingAdmin = await env.DB.prepare(
     `SELECT id FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE'
       AND deleted_at IS NULL AND password_hash IS NOT NULL LIMIT 1`
@@ -569,6 +622,9 @@ async function bootstrapAdmin(request, env) {
     ).bind(adminId, username, email || internalEmail(adminId), email, salt, passwordHash, now(), now()).run();
     if (!result.meta.changes) fail(409, 'First-admin setup was already completed.');
   }
+  await env.DB.prepare(
+    "UPDATE portal_settings SET setting_value = '1', updated_at = ? WHERE setting_key = 'bootstrap_completed'"
+  ).bind(now()).run();
   await audit(env, adminId, 'staff.bootstrap_completed', 'staff_user', adminId);
   const admin = await env.DB.prepare(
     'SELECT id, username, contact_email, role, must_change_password FROM staff_users WHERE id = ?'
@@ -576,21 +632,20 @@ async function bootstrapAdmin(request, env) {
   return createSession(request, env, admin);
 }
 
-async function recordLoginFailure(env, attemptKey) {
-  const timestamp = Date.now();
-  const current = await env.DB.prepare('SELECT failure_count, window_started_at, locked_until FROM login_attempts WHERE attempt_key = ?')
-    .bind(attemptKey).first();
+async function recordLoginFailure(env, attemptKey, maxFailures) {
+  const timestamp = now();
   const windowMs = 15 * 60 * 1000;
-  const freshWindow = !current || timestamp - Date.parse(current.window_started_at) >= windowMs;
-  const failureCount = freshWindow ? 1 : current.failure_count + 1;
-  const windowStartedAt = freshWindow ? new Date(timestamp).toISOString() : current.window_started_at;
-  const lockedUntil = failureCount >= 5 ? new Date(timestamp + windowMs).toISOString() : null;
+  const lockedUntil = new Date(Date.now() + windowMs).toISOString();
+  const freshWindow = `julianday(excluded.window_started_at) - julianday(login_attempts.window_started_at) >= (? / 86400000.0)`;
   await env.DB.prepare(
     `INSERT INTO login_attempts (attempt_key, failure_count, window_started_at, locked_until, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(attempt_key) DO UPDATE SET failure_count = excluded.failure_count,
-       window_started_at = excluded.window_started_at, locked_until = excluded.locked_until, updated_at = excluded.updated_at`
-  ).bind(attemptKey, failureCount, windowStartedAt, lockedUntil, now()).run();
+     VALUES (?, 1, ?, NULL, ?)
+     ON CONFLICT(attempt_key) DO UPDATE SET
+       failure_count = CASE WHEN ${freshWindow} THEN 1 ELSE login_attempts.failure_count + 1 END,
+       window_started_at = CASE WHEN ${freshWindow} THEN excluded.window_started_at ELSE login_attempts.window_started_at END,
+       locked_until = CASE WHEN (CASE WHEN ${freshWindow} THEN 1 ELSE login_attempts.failure_count + 1 END) >= ? THEN ? ELSE NULL END,
+       updated_at = excluded.updated_at`
+  ).bind(attemptKey, timestamp, timestamp, windowMs, windowMs, windowMs, maxFailures, lockedUntil).run();
 }
 
 async function login(request, env) {
@@ -599,9 +654,15 @@ async function login(request, env) {
   const password = typeof body.password === 'string' ? body.password : '';
   if (!username || password.length > 128) fail(400, 'Enter a valid username and password.');
   const clientAddress = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const attemptKey = await sha256(`${clientAddress}\n${username.toLowerCase()}`);
-  const attempt = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE attempt_key = ?').bind(attemptKey).first();
-  if (attempt?.locked_until && Date.parse(attempt.locked_until) > Date.now()) fail(429, 'Too many failed attempts. Try again in 15 minutes.');
+  const addressHash = await sha256(clientAddress);
+  const pairKey = `pair:${await sha256(`${clientAddress}\n${username.toLowerCase()}`)}`;
+  const addressKey = `ip:${addressHash}`;
+  const attempts = await env.DB.prepare(
+    'SELECT attempt_key, locked_until FROM login_attempts WHERE attempt_key IN (?, ?)'
+  ).bind(pairKey, addressKey).all();
+  if (attempts.results.some(attempt => attempt.locked_until && Date.parse(attempt.locked_until) > Date.now())) {
+    fail(429, 'Too many failed attempts. Try again in 15 minutes.');
+  }
 
   const user = await env.DB.prepare(
     `SELECT id, username, contact_email, role, status, password_salt, password_hash, must_change_password
@@ -611,11 +672,12 @@ async function login(request, env) {
   const candidateHash = await derivePassword(candidatePassword, user?.password_salt || '00000000000000000000000000000000');
   const valid = user && user.status === 'ACTIVE' && user.password_hash && sameSecret(candidateHash, user.password_hash) && validPassword(password);
   if (!valid) {
-    await recordLoginFailure(env, attemptKey);
+    await recordLoginFailure(env, pairKey, 5);
+    await recordLoginFailure(env, addressKey, 30);
     fail(401, 'Username or password is incorrect.');
   }
 
-  await env.DB.prepare('DELETE FROM login_attempts WHERE attempt_key = ?').bind(attemptKey).run();
+  await env.DB.prepare('DELETE FROM login_attempts WHERE attempt_key = ?').bind(pairKey).run();
   return createSession(request, env, user);
 }
 

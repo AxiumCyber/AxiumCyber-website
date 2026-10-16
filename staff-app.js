@@ -9,6 +9,7 @@ let customers = [];
 let tickets = [];
 let activeView = 'overview';
 let csrfToken = '';
+let activeTicketId = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -47,6 +48,8 @@ function setNavigation() {
   const support = role === 'SUPPORT';
   const technical = role === 'TECHNICAL TEAM';
   const forensic = role === 'FORENSIC ANALYST';
+  byId('queueNav').classList.toggle('hidden', forensic);
+  byId('newTicketButton').classList.toggle('hidden', !admin && !support);
   byId('customersNav').classList.toggle('hidden', !admin && !support);
   byId('labNav').classList.toggle('hidden', !admin && !technical);
   byId('engagementsNav').classList.toggle('hidden', !admin && !technical);
@@ -59,7 +62,7 @@ function setNavigation() {
 
 function canOpen(view) {
   const role = staff.role;
-  return view === 'overview' || view === 'queue' ||
+  return view === 'overview' || (view === 'queue' && role !== 'FORENSIC ANALYST') ||
     (view === 'customers' && ['SUPER ADMIN', 'SUPPORT'].includes(role)) ||
     (view === 'lab' && ['SUPER ADMIN', 'TECHNICAL TEAM'].includes(role)) ||
     (view === 'engagements' && ['SUPER ADMIN', 'TECHNICAL TEAM'].includes(role)) ||
@@ -82,7 +85,7 @@ function ticketRow(ticket) {
   const status = escapeHtml(ticket.status);
   const priorityClass = ticket.priority === 'URGENT' ? 'urgent' : ['HIGH', 'NORMAL'].includes(ticket.priority) ? 'waiting' : 'open';
   const action = ticket.status === 'CLOSED' ? 'Reopen' : 'Resolve';
-  return `<tr><td class="ticket-id">${escapeHtml(ticket.id.slice(0, 8))}</td><td><div class="ticket-name">${escapeHtml(ticket.customer_name)}</div><div class="ticket-type">${escapeHtml(ticket.subject)}</div></td><td>${escapeHtml(ticket.category)}</td><td><span class="pill ${priorityClass}">${escapeHtml(ticket.priority)}</span></td><td>${escapeHtml(ticket.assigned_role)}</td><td><span class="pill ${ticket.status.toLowerCase()}">${status}</span></td><td><button class="button small ticket-action" data-id="${escapeHtml(ticket.id)}" aria-label="${action} ticket">${action}</button></td></tr>`;
+  return `<tr><td><button class="ticket-id ticket-view" data-id="${escapeHtml(ticket.id)}" aria-label="Open ticket ${escapeHtml(ticket.id.slice(0, 8))}">${escapeHtml(ticket.id.slice(0, 8))}</button></td><td><button class="ticket-name ticket-view" data-id="${escapeHtml(ticket.id)}">${escapeHtml(ticket.customer_name)}</button><div class="ticket-type">${escapeHtml(ticket.subject)}</div></td><td>${escapeHtml(ticket.category)}</td><td><span class="pill ${priorityClass}">${escapeHtml(ticket.priority)}</span></td><td>${escapeHtml(ticket.assigned_role)}</td><td><span class="pill ${ticket.status.toLowerCase()}">${status}</span></td><td><div class="ticket-actions"><button class="button small ticket-view" data-id="${escapeHtml(ticket.id)}">Open</button><button class="button small ticket-action" data-id="${escapeHtml(ticket.id)}" aria-label="${action} ticket">${action}</button></div></td></tr>`;
 }
 
 function renderTickets() {
@@ -98,7 +101,7 @@ function renderTickets() {
   byId('priorityCount').textContent = String(open.filter(ticket => ['URGENT', 'HIGH'].includes(ticket.priority)).length);
   const priority = open.filter(ticket => ['URGENT', 'HIGH'].includes(ticket.priority)).slice(0, 4);
   byId('overviewTickets').innerHTML = priority.length ? priority.map(ticket =>
-    `<tr><td class="ticket-id">${escapeHtml(ticket.id.slice(0, 8))}</td><td><div class="ticket-name">${escapeHtml(ticket.customer_name)}</div><div class="ticket-type">${escapeHtml(ticket.subject)}</div></td><td><span class="pill ${ticket.priority === 'URGENT' ? 'urgent' : 'waiting'}">${escapeHtml(ticket.priority)}</span></td><td>${escapeHtml(ticket.assigned_role)}</td><td><span class="pill ${ticket.status.toLowerCase()}">${escapeHtml(ticket.status)}</span></td></tr>`
+    `<tr><td><button class="ticket-id ticket-view" data-id="${escapeHtml(ticket.id)}">${escapeHtml(ticket.id.slice(0, 8))}</button></td><td><button class="ticket-name ticket-view" data-id="${escapeHtml(ticket.id)}">${escapeHtml(ticket.customer_name)}</button><div class="ticket-type">${escapeHtml(ticket.subject)}</div></td><td><span class="pill ${ticket.priority === 'URGENT' ? 'urgent' : 'waiting'}">${escapeHtml(ticket.priority)}</span></td><td>${escapeHtml(ticket.assigned_role)}</td><td><span class="pill ${ticket.status.toLowerCase()}">${escapeHtml(ticket.status)}</span></td></tr>`
   ).join('') : '<tr><td colspan="5" class="empty-state">No priority tickets.</td></tr>';
 }
 
@@ -111,6 +114,7 @@ function renderCustomers() {
   byId('customerRecordCount').textContent = `${shown.length} RECORDS`;
   byId('customerCount').textContent = String(customers.length);
   byId('engagementCustomer').innerHTML = customers.map(customer => `<option value="${escapeHtml(customer.id)}">${escapeHtml(customer.display_name)} · ${escapeHtml(customer.organization)}</option>`).join('');
+  byId('ticketCustomer').innerHTML = customers.map(customer => `<option value="${escapeHtml(customer.id)}">${escapeHtml(customer.display_name)}${customer.organization ? ` · ${escapeHtml(customer.organization)}` : ''}</option>`).join('');
 }
 
 function renderUsers(users) {
@@ -174,6 +178,34 @@ async function loadView(name) {
   }
   if (name === 'forensics') renderCases((await api('/api/forensics/cases')).cases);
   if (name === 'audit') renderAudit((await api('/api/audit')).events);
+}
+
+async function openTicket(ticketId) {
+  activeTicketId = ticketId;
+  byId('ticketModalTitle').textContent = 'Loading ticket…';
+  byId('ticketDetailMeta').replaceChildren();
+  byId('ticketDescription').textContent = '';
+  byId('ticketNotes').innerHTML = '<div class="empty-state">Loading notes…</div>';
+  byId('ticketModal').classList.add('open');
+  try {
+    const { ticket, notes } = await api(`/api/tickets/${encodeURIComponent(ticketId)}`);
+    if (activeTicketId !== ticketId || !byId('ticketModal').classList.contains('open')) return;
+    byId('ticketModalTitle').textContent = ticket.subject;
+    byId('ticketDetailMeta').innerHTML = [
+      ['Ticket', ticket.id], ['Customer', ticket.customer_name], ['Email', ticket.customer_email],
+      ['Organization', ticket.organization || '—'], ['Category', ticket.category],
+      ['Priority', ticket.priority], ['Status', ticket.status], ['Assigned team', ticket.assigned_role],
+      ['Created', new Date(ticket.created_at).toLocaleString()]
+    ].map(([label, value]) => `<div class="ticket-detail-item"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
+    byId('ticketDescription').textContent = ticket.description;
+    byId('ticketNotes').innerHTML = notes.length ? notes.map(note =>
+      `<article class="ticket-note"><strong>${escapeHtml(note.author)}</strong><small> · ${escapeHtml(new Date(note.created_at).toLocaleString())}</small><p>${escapeHtml(note.body)}</p></article>`
+    ).join('') : '<div class="empty-state">No staff notes yet.</div>';
+  } catch (error) {
+    if (activeTicketId !== ticketId || !byId('ticketModal').classList.contains('open')) return;
+    byId('ticketModalTitle').textContent = 'Unable to open ticket';
+    byId('ticketNotes').textContent = error.message;
+  }
 }
 
 async function openDashboard() {
@@ -343,6 +375,11 @@ byId('ticketFilter').addEventListener('change', renderTickets);
 byId('customerSearch').addEventListener('input', renderCustomers);
 
 byId('ticketRows').addEventListener('click', async event => {
+  const openButton = event.target.closest('.ticket-view');
+  if (openButton) {
+    await openTicket(openButton.dataset.id);
+    return;
+  }
   const button = event.target.closest('.ticket-action');
   if (!button) return;
   const ticket = tickets.find(item => item.id === button.dataset.id);
@@ -354,6 +391,67 @@ byId('ticketRows').addEventListener('click', async event => {
     await loadTickets();
     toast('Ticket status updated.');
   } catch (error) { toast(error.message); }
+});
+byId('overviewTickets').addEventListener('click', event => {
+  const button = event.target.closest('.ticket-view');
+  if (button) openTicket(button.dataset.id);
+});
+
+const ticketModal = byId('ticketModal');
+const newTicketModal = byId('newTicketModal');
+function closeTicketModal() {
+  ticketModal.classList.remove('open');
+  activeTicketId = null;
+}
+function closeNewTicketModal() { newTicketModal.classList.remove('open'); }
+byId('newTicketButton').addEventListener('click', () => {
+  if (!['SUPER ADMIN', 'SUPPORT'].includes(staff.role)) return;
+  if (!customers.length) {
+    toast('Add a customer before creating a ticket.');
+    showView('customers');
+    return;
+  }
+  newTicketModal.classList.add('open');
+});
+ticketModal.querySelectorAll('[data-close-ticket]').forEach(button => button.addEventListener('click', closeTicketModal));
+newTicketModal.querySelectorAll('[data-close-new-ticket]').forEach(button => button.addEventListener('click', closeNewTicketModal));
+ticketModal.addEventListener('click', event => { if (event.target === ticketModal) closeTicketModal(); });
+newTicketModal.addEventListener('click', event => { if (event.target === newTicketModal) closeNewTicketModal(); });
+byId('ticketNoteForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!activeTicketId) return;
+  const submit = event.currentTarget.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try {
+    await api(`/api/tickets/${encodeURIComponent(activeTicketId)}/notes`, {
+      method: 'POST', body: JSON.stringify({ body: byId('ticketNoteInput').value })
+    });
+    byId('ticketNoteInput').value = '';
+    await openTicket(activeTicketId);
+    toast('Staff note added.');
+  } catch (error) { toast(error.message); }
+  finally { submit.disabled = false; }
+});
+byId('ticketForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = event.currentTarget.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try {
+    const result = await api('/api/tickets', { method: 'POST', body: JSON.stringify({
+      customerId: byId('ticketCustomer').value,
+      subject: byId('ticketSubject').value,
+      category: byId('ticketCategory').value,
+      priority: byId('ticketPriority').value,
+      assignedRole: byId('ticketAssignedRole').value,
+      description: byId('ticketDescriptionInput').value
+    }) });
+    event.currentTarget.reset();
+    closeNewTicketModal();
+    await loadTickets();
+    toast('Ticket created.');
+    await openTicket(result.id);
+  } catch (error) { toast(error.message); }
+  finally { submit.disabled = false; }
 });
 
 byId('customerForm').addEventListener('submit', async event => {
@@ -378,7 +476,13 @@ byId('newUserButton').addEventListener('click', () => modal.classList.add('open'
 byId('closeModal').addEventListener('click', closeModal);
 byId('cancelModal').addEventListener('click', closeModal);
 modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
-document.addEventListener('keydown', event => { if (event.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    closeModal();
+    closeTicketModal();
+    closeNewTicketModal();
+  }
+});
 byId('userForm').addEventListener('submit', async event => {
   event.preventDefault();
   try {
