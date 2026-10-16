@@ -67,7 +67,7 @@ function canOpen(view) {
     (view === 'team' && role === 'SUPER ADMIN') || (view === 'audit' && role === 'SUPER ADMIN');
 }
 
-function showView(name) {
+function showView(name, refresh = true) {
   if (!canOpen(name)) {
     toast('Your staff role cannot access that workspace.');
     return;
@@ -75,7 +75,7 @@ function showView(name) {
   activeView = name;
   document.querySelectorAll('.view').forEach(section => section.classList.toggle('active', section.id === `view-${name}`));
   document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === name));
-  loadView(name).catch(error => toast(error.message));
+  if (refresh) loadView(name).catch(error => toast(error.message));
 }
 
 function ticketRow(ticket) {
@@ -183,10 +183,14 @@ async function openDashboard() {
   byId('staffGreeting').textContent = staff.username;
   byId('serviceStatus').textContent = 'CONNECTED';
   byId('serviceNote').textContent = 'Staff session verified';
-  await loadTickets();
-  await loadCustomers();
-  if (staff.role === 'SUPER ADMIN') renderAudit((await api('/api/audit')).events);
-  else renderAudit([]);
+  const initialLoads = [loadTickets()];
+  if (['SUPER ADMIN', 'SUPPORT'].includes(staff.role)) initialLoads.push(loadCustomers());
+  if (staff.role === 'SUPER ADMIN') {
+    initialLoads.push(api('/api/audit').then(({ events }) => renderAudit(events)));
+  } else {
+    renderAudit([]);
+  }
+  await Promise.all(initialLoads);
   byId('accessProgress').style.width = '100%';
   document.querySelector('.access-progress').setAttribute('aria-valuenow', '100');
   byId('accessMessage').className = 'access-message granted';
@@ -194,7 +198,7 @@ async function openDashboard() {
   setTimeout(() => {
     loginView.classList.add('hidden');
     appView.classList.remove('hidden');
-    showView('overview');
+    showView('overview', false);
   }, 350);
 }
 
