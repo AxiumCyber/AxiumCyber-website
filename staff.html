@@ -22,14 +22,31 @@
 <div class="shell">
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>AXIUM CYBER<small>STAFF OPERATIONS</small></span></a>
-    <div class="top-meta"><span class="live">ACCESS GATEWAY</span><span class="top-role" id="roleBadge">UNVERIFIED</span><button class="top-button" id="signOut">Sign out</button></div>
+    <div class="top-meta"><span class="live">STAFF AUTH</span><span class="top-role" id="roleBadge">UNVERIFIED</span><button class="top-button" id="signOut">Sign out</button></div>
   </header>
   <div class="login-wrap" id="loginView">
     <div class="login-panel">
-      <div class="login-mark">AX / INTERNAL ACCESS</div><h1>Staff dashboard</h1><p>Confirm your organization identity before entering staff operations.</p>
-      <button class="button primary" id="enterDashboard" type="button">Enter Dashboard</button>
-      <div class="access-state" aria-live="polite"><div class="access-progress" role="progressbar" aria-label="Access verification" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="accessProgress"></span></div><div class="access-message" id="accessMessage">Access is verified through the organization sign-in gateway.</div></div>
-      <div class="login-foot">No shared default password is used. Your organization identity provider handles sign-in and MFA.</div>
+      <div class="login-mark">AX / STAFF OPERATIONS</div><h1 id="loginTitle">Staff sign in</h1><p id="loginDescription">Use the username and password assigned by your Super Admin.</p>
+      <form id="loginForm">
+        <div class="field"><label for="loginUsername">Username</label><input id="loginUsername" autocomplete="username" required maxlength="40"></div>
+        <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required maxlength="128"></div>
+        <button class="button primary" id="enterDashboard" type="submit">Enter Dashboard</button>
+      </form>
+      <form id="setupForm" class="hidden">
+        <div class="field"><label for="setupSecret">One-time setup secret</label><input id="setupSecret" type="password" autocomplete="off" required></div>
+        <div class="field"><label for="setupUsername">Super Admin username</label><input id="setupUsername" value="admin" autocomplete="username" required maxlength="40"></div>
+        <div class="field"><label for="setupPassword">Super Admin password</label><input id="setupPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="128"></div>
+        <div class="field"><label for="setupEmail">Email (optional)</label><input id="setupEmail" type="email" autocomplete="email" maxlength="254"></div>
+        <button class="button primary" type="submit">Create Super Admin</button>
+      </form>
+      <form id="changePasswordForm" class="hidden">
+        <div class="field"><label for="currentPassword">Temporary password</label><input id="currentPassword" type="password" autocomplete="current-password" required maxlength="128"></div>
+        <div class="field"><label for="replacementPassword">New password</label><input id="replacementPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="128"></div>
+        <div class="field"><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="128"></div>
+        <button class="button primary" type="submit">Change password</button>
+      </form>
+      <div class="access-state" aria-live="polite"><div class="access-progress" role="progressbar" aria-label="Dashboard verification" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="accessProgress"></span></div><div class="access-message" id="accessMessage">Enter your staff credentials to continue.</div></div>
+      <div class="login-foot">Passwords are stored as salted hashes. Temporary passwords must be changed at first sign-in; never send passwords by email.</div>
     </div>
   </div>
   <div class="layout hidden" id="appView">
@@ -45,7 +62,7 @@
         <button class="nav-item hidden" data-view="team" id="teamNav"><span class="nav-icon">06</span>Team access</button>
         <button class="nav-item hidden" data-view="audit" id="auditNav"><span class="nav-icon">07</span>Audit trail</button>
       </nav>
-      <div class="side-bottom">ENVIRONMENT<br><b>DEMO / STATIC</b><br>REGION: LOCAL</div>
+      <div class="side-bottom">ENVIRONMENT<br><b>STAFF OPERATIONS</b><br>REGION: CONFIGURED</div>
     </aside>
     <main class="main">
       <div class="prototype"><strong>CONTROLLED ACCESS</strong> &nbsp; Staff permissions are verified by the server for every data request.</div>
@@ -89,35 +106,22 @@
         <article class="panel section-gap"><div class="panel-head"><span class="panel-title">Case register</span><span class="panel-meta">FORENSIC ROLE ONLY</span></div><div class="table-wrap"><table><thead><tr><th>Case</th><th>Title</th><th>Authority</th><th>Expires</th><th>Status</th></tr></thead><tbody id="caseRows"></tbody></table></div></article>
       </section>
       <section class="view" id="view-team">
-        <div class="page-head"><div><div class="eyebrow">Workspace / identity</div><h1>Team access</h1><p class="subhead">Create staff invitations and review assigned roles.</p></div><button class="button primary" id="newUserButton">+ Create user</button></div>
-        <article class="panel"><div class="panel-head"><span class="panel-title">Staff directory</span><span class="panel-meta">DATABASE RECORDS</span></div><div class="table-wrap"><table><thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Access status</th></tr></thead><tbody id="userRows"></tbody></table></div></article>
+        <div class="page-head"><div><div class="eyebrow">Workspace / identity</div><h1>Team access</h1><p class="subhead">Create accounts, assign roles, and remove access.</p></div><button class="button primary" id="newUserButton">+ Create user</button></div>
+        <article class="panel"><div class="panel-head"><span class="panel-title">Staff directory</span><span class="panel-meta">DATABASE RECORDS</span></div><div class="table-wrap"><table><thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Access status</th><th>Action</th></tr></thead><tbody id="userRows"></tbody></table></div></article>
       </section>
       <section class="view" id="view-audit">
-        <div class="page-head"><div><div class="eyebrow">Workspace / accountability</div><h1>Audit trail</h1><p class="subhead">Recent prototype events. These entries are not durable or tamper-proof.</p></div></div>
+        <div class="page-head"><div><div class="eyebrow">Workspace / accountability</div><h1>Audit trail</h1><p class="subhead">Server-recorded staff and data changes.</p></div></div>
         <article class="panel"><div class="panel-head"><span class="panel-title">Recent activity</span><span class="panel-meta">BROWSER SESSION</span></div><div class="audit-list" id="auditRows"></div></article>
       </section>
     </main>
   </div>
 </div>
 <div class="modal-backdrop" id="userModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-  <form class="modal" id="userForm"><div class="modal-head"><h2 id="modalTitle">Create staff invitation</h2><button class="icon-button" type="button" id="closeModal" aria-label="Close dialog">X</button></div><div class="modal-body"><p>Invites are sent by the configured verified email service. Staff set up access through the organization identity gateway; passwords are never emailed.</p><div class="form-grid"><div class="field form-field"><label for="newUsername">Username</label><input id="newUsername" required maxlength="40" placeholder="j.smith"></div><div class="field form-field"><label for="newEmail">Staff email</label><input id="newEmail" type="email" required placeholder="j.smith@example.com"></div><div class="field form-field full"><label for="newRole">Role</label><select id="newRole"><option>SUPPORT</option><option>TECHNICAL TEAM</option><option>MODERATOR</option><option>TEAM MEMBER</option><option>FORENSIC ANALYST</option><option>SUPER ADMIN</option></select></div></div><div class="form-actions"><button class="button primary" type="submit">Send secure invite</button><button class="button" type="button" id="cancelModal">Cancel</button></div></div></form>
+  <form class="modal" id="userForm"><div class="modal-head"><h2 id="modalTitle">Create staff account</h2><button class="icon-button" type="button" id="closeModal" aria-label="Close dialog">X</button></div><div class="modal-body"><p>Set a temporary password for the new account. The user must change it at first sign-in. Email is optional; do not send the password by email.</p><div class="form-grid"><div class="field form-field"><label for="newUsername">Username</label><input id="newUsername" required maxlength="40" placeholder="j.smith" autocomplete="off"></div><div class="field form-field"><label for="newPassword">Temporary password</label><input id="newPassword" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></div><div class="field form-field full"><label for="newEmail">Email (optional)</label><input id="newEmail" type="email" maxlength="254" placeholder="j.smith@example.com" autocomplete="off"></div><div class="field form-field full"><label for="newRole">Role</label><select id="newRole"><option>SUPPORT</option><option>TECHNICAL TEAM</option><option>MODERATOR</option><option>TEAM MEMBER</option><option>FORENSIC ANALYST</option><option>SUPER ADMIN</option></select></div></div><div class="form-actions"><button class="button primary" type="submit">Create account</button><button class="button" type="button" id="cancelModal">Cancel</button></div></div></form>
 </div>
 <script type="text/plain" id="disabled-prototype-script">
-const demoTickets=[
- {id:'AX-1842',name:'Morgan Lee',subject:'Cannot access account after MFA reset',category:'Account access',priority:'URGENT',owner:'Support',status:'OPEN'},
- {id:'AX-1841',name:'Jordan Patel',subject:'Dashboard export returns an error',category:'Application',priority:'HIGH',owner:'Technical',status:'OPEN'},
- {id:'AX-1840',name:'Alex Rivera',subject:'Report a suspicious community post',category:'Moderation',priority:'NORMAL',owner:'Moderator',status:'WAITING'},
- {id:'AX-1839',name:'Casey Wong',subject:'Request access to project workspace',category:'Access request',priority:'NORMAL',owner:'Support',status:'OPEN'},
- {id:'AX-1838',name:'Taylor Brooks',subject:'Integration webhook delivery delays',category:'Integration',priority:'HIGH',owner:'Technical',status:'WAITING'},
- {id:'AX-1837',name:'Sam Chen',subject:'Flagged profile review',category:'Moderation',priority:'NORMAL',owner:'Moderator',status:'OPEN'},
- {id:'AX-1836',name:'Riley Jones',subject:'Update contact details',category:'Account access',priority:'LOW',owner:'Team Member',status:'CLOSED'},
- {id:'AX-1835',name:'Drew Kim',subject:'Intermittent sign-in timeout',category:'Application',priority:'HIGH',owner:'Technical',status:'OPEN'},
- {id:'AX-1834',name:'Avery Diaz',subject:'Billing contact correction',category:'General',priority:'LOW',owner:'Support',status:'WAITING'},
- {id:'AX-1833',name:'Jamie Park',subject:'Remove duplicate community listing',category:'Moderation',priority:'NORMAL',owner:'Moderator',status:'OPEN'},
- {id:'AX-1832',name:'Robin Shah',subject:'Need help with device enrollment',category:'Device support',priority:'NORMAL',owner:'Support',status:'OPEN'},
- {id:'AX-1831',name:'Cameron Bell',subject:'Documentation link appears outdated',category:'Content',priority:'LOW',owner:'Team Member',status:'CLOSED'}
-];
-const demoUsers=[{username:'alex.morgan',email:'alex@axiumcyber.example',role:'SUPER ADMIN',status:'ACTIVE'},{username:'j.smith',email:'j.smith@axiumcyber.example',role:'SUPPORT',status:'ACTIVE'},{username:'t.chen',email:'t.chen@axiumcyber.example',role:'TECHNICAL TEAM',status:'ACTIVE'},{username:'m.rivera',email:'m.rivera@axiumcyber.example',role:'MODERATOR',status:'ACTIVE'},{username:'r.jones',email:'r.jones@axiumcyber.example',role:'TEAM MEMBER',status:'ACTIVE'}];
+const demoTickets=[];
+const demoUsers=[];
 const roleSwitch=document.getElementById('roleSwitch'), views=[...document.querySelectorAll('.view')], auditEvents=[];
 function toast(message){const node=document.createElement('div');node.className='toast';node.textContent=message;document.body.append(node);setTimeout(()=>node.remove(),3000)}
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
@@ -129,7 +133,7 @@ function showView(name){if(!roleCanView(name)){toast('This workspace view is not
 function renderTickets(){const filter=document.getElementById('ticketFilter').value,query=document.getElementById('ticketSearch').value.trim().toLowerCase();const rows=visibleTickets().filter(ticket=>(filter==='ALL'||ticket.status===filter)&&Object.values(ticket).join(' ').toLowerCase().includes(query));document.getElementById('queueCount').textContent=rows.length+' RECORDS';document.getElementById('shownCount').textContent=rows.length;document.getElementById('ticketRows').innerHTML=rows.map(ticket=>`<tr><td class="ticket-id">${ticket.id}</td><td><div class="ticket-name">${ticket.name}</div><div class="ticket-type">${ticket.subject}</div></td><td>${ticket.category}</td><td><span class="pill ${ticket.priority==='URGENT'?'urgent':ticket.priority==='HIGH'?'waiting':'open'}">${ticket.priority}</span></td><td>${ticket.owner}</td><td><span class="pill ${ticket.status.toLowerCase()}">${ticket.status}</span></td><td><button class="button small ticket-action" data-id="${ticket.id}">${ticket.status==='CLOSED'?'Reopen':'Resolve'}</button></td></tr>`).join('')||'<tr><td colspan="7">No matching tickets.</td></tr>';document.querySelectorAll('.ticket-action').forEach(button=>button.addEventListener('click',()=>{const ticket=demoTickets.find(item=>item.id===button.dataset.id);ticket.status=ticket.status==='CLOSED'?'OPEN':'CLOSED';audit(`${ticket.id} marked ${ticket.status.toLowerCase()}`);renderTickets();renderOverview()}))}
 function renderOverview(){const tickets=visibleTickets(),open=tickets.filter(ticket=>ticket.status!=='CLOSED').length;document.getElementById('openCount').textContent=String(open).padStart(2,'0');document.getElementById('overviewTickets').innerHTML=tickets.filter(ticket=>ticket.priority==='URGENT'||ticket.priority==='HIGH').slice(0,4).map(ticket=>`<tr><td class="ticket-id">${ticket.id}</td><td><div class="ticket-name">${ticket.name}</div><div class="ticket-type">${ticket.subject}</div></td><td><span class="pill ${ticket.priority==='URGENT'?'urgent':'waiting'}">${ticket.priority}</span></td><td>${ticket.owner}</td><td><span class="pill ${ticket.status.toLowerCase()}">${ticket.status}</span></td></tr>`).join('')}
 function renderUsers(){document.getElementById('userRows').innerHTML=demoUsers.map((user,index)=>`<tr><td class="ticket-name">${escapeHtml(user.username)}</td><td>${escapeHtml(user.email)}</td><td><select class="role-switch user-role" data-index="${index}" aria-label="Role for ${escapeHtml(user.username)}" ${canAdmin()?'':'disabled'}>${['SUPER ADMIN','SUPPORT','TECHNICAL TEAM','MODERATOR','TEAM MEMBER'].map(role=>`<option ${user.role===role?'selected':''}>${role}</option>`).join('')}</select></td><td><span class="pill ${user.status==='ACTIVE'?'open':'waiting'}">${escapeHtml(user.status)}</span></td><td><button class="button small invite-again" data-index="${index}" ${user.status==='ACTIVE'?'disabled':''}>Resend invite</button></td></tr>`).join('');document.querySelectorAll('.user-role').forEach(select=>select.addEventListener('change',()=>{demoUsers[Number(select.dataset.index)].role=select.value;audit(`Role changed for ${demoUsers[Number(select.dataset.index)].username}`);toast('Role updated in this demo session.')}));document.querySelectorAll('.invite-again').forEach(button=>button.addEventListener('click',()=>toast('Invitation resend requires a configured email service.')))}
-function renderAudit(){document.getElementById('auditRows').innerHTML=(auditEvents.length?auditEvents:[{time:'09:42:18',role:'SYSTEM',action:'Prototype session initialized'},{time:'09:36:02',role:'SUPPORT',action:'Ticket AX-1842 assigned to queue'},{time:'09:14:51',role:'SUPER ADMIN',action:'Access review reminder created'}]).slice(0,30).map(event=>`<div class="audit-row"><time>${escapeHtml(event.time)}</time><b>${escapeHtml(event.role)}</b><span>${escapeHtml(event.action)}</span></div>`).join('')}
+function renderAudit(){document.getElementById('auditRows').innerHTML=auditEvents.slice(0,30).map(event=>`<div class="audit-row"><time>${escapeHtml(event.time)}</time><b>${escapeHtml(event.role)}</b><span>${escapeHtml(event.action)}</span></div>`).join('')||'<div class="empty-state">No audit events.</div>'}
 document.querySelectorAll('.nav-item').forEach(button=>button.addEventListener('click',()=>showView(button.dataset.view)));document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener('click',()=>showView(button.dataset.goto)));document.getElementById('ticketSearch').addEventListener('input',renderTickets);document.getElementById('ticketFilter').addEventListener('change',renderTickets);
 roleSwitch.addEventListener('change',()=>{const admin=canAdmin(),technical=roleSwitch.value==='TECHNICAL TEAM';document.getElementById('teamNav').classList.toggle('hidden',!admin);document.getElementById('labNav').classList.toggle('hidden',!admin&&!technical);const active=document.querySelector('.view.active');if(active&&!roleCanView(active.id.replace('view-','')))showView('overview');renderTickets();renderOverview();audit(`Prototype role switched to ${roleSwitch.value}`)});
 document.getElementById('scopeCheck').addEventListener('click',()=>{const host=document.getElementById('scopeTarget').value.trim().toLowerCase().replace(/\.$/,''),allowed=document.getElementById('scopeList').value.split(',').map(item=>item.trim().toLowerCase().replace(/^https?:\/\//,'').split('/')[0].replace(/\.$/,'' )).filter(Boolean);const valid=/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(host);const match=valid&&allowed.some(root=>host===root||host.endsWith('.'+root));const output=document.getElementById('scopeOutput');output.innerHTML=match?`<strong>IN SCOPE</strong> ${escapeHtml(host)} matches a supplied approved hostname.`:`<span class="${valid?'risk':'finding'}">${valid?'OUT OF SCOPE':'INVALID HOSTNAME'}</span> ${escapeHtml(host||'No hostname supplied')}; no network request was made.`;audit('Scope text check performed')});

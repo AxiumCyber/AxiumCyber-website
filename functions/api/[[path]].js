@@ -2,6 +2,8 @@ const ROLES = new Set(['SUPER ADMIN', 'SUPPORT', 'TECHNICAL TEAM', 'MODERATOR', 
 const LANES = new Set(['SUPPORT', 'TECHNICAL TEAM', 'MODERATOR', 'TEAM MEMBER']);
 const TEST_CATEGORIES = new Set(['CODE_DEPENDENCY', 'WEB_API', 'NETWORK_SERVICE', 'CLOUD_CONFIGURATION']);
 const encoder = new TextEncoder();
+const PASSWORD_ITERATIONS = 310000;
+const SESSION_SECONDS = 8 * 60 * 60;
 
 class ApiError extends Error {
   constructor(status, message) {
@@ -10,7 +12,7 @@ class ApiError extends Error {
   }
 }
 
-function respond(data, status = 200) {
+function respond(data, status = 200, extraHeaders = {}) {
   return Response.json(data, {
     status,
     headers: {
@@ -19,7 +21,8 @@ function respond(data, status = 200) {
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
       'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-      'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"
+      'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+      ...extraHeaders
     }
   });
 }
@@ -36,89 +39,9 @@ function now() {
   return new Date().toISOString();
 }
 
-function base64UrlBytes(value) {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
-  return Uint8Array.from(binary, character => character.charCodeAt(0));
-}
-
-function base64UrlJson(value) {
-  return JSON.parse(new TextDecoder().decode(base64UrlBytes(value)));
-}
-
 async function sha256(value) {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-async function verifyAccessAssertion(request, env) {
-  const teamDomain = env.CF_ACCESS_TEAM_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  if (!teamDomain || !env.CF_ACCESS_AUD) fail(503, 'Cloudflare Access is not configured.');
-
-  const token = request.headers.get('CF-Access-Jwt-Assertion');
-  if (!token) fail(401, 'Sign in through the organization access gateway.');
-
-  const parts = token.split('.');
-  if (parts.length !== 3) fail(401, 'Invalid access assertion.');
-
-  let header;
-  let claims;
-  try {
-    header = base64UrlJson(parts[0]);
-    claims = base64UrlJson(parts[1]);
-  } catch {
-    fail(401, 'Invalid access assertion.');
-  }
-  if (header.alg !== 'RS256' || typeof header.kid !== 'string') fail(401, 'Invalid access assertion.');
-
-  const issuer = `https://${teamDomain}`;
-  if (claims.iss !== issuer || !Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1000) {
-    fail(401, 'Expired or invalid access assertion.');
-  }
-  if (claims.nbf && claims.nbf > Date.now() / 1000 + 60) fail(401, 'Access assertion is not active yet.');
-  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (!audiences.includes(env.CF_ACCESS_AUD)) fail(401, 'Access assertion is for another application.');
-
-  let certificates;
-  try {
-    const response = await fetch(`${issuer}/cdn-cgi/access/certs`, { cf: { cacheTtl: 300, cacheEverything: true } });
-    if (!response.ok) fail(503, 'Could not verify organization identity.');
-    certificates = await response.json();
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    fail(503, 'Could not verify organization identity.');
-  }
-  const jwk = certificates.keys?.find(key => key.kid === header.kid && key.kty === 'RSA');
-  if (!jwk) fail(401, 'Unknown access signing key.');
-
-  let valid = false;
-  try {
-    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
-    valid = await crypto.subtle.verify(
-      'RSASSA-PKCS1-v1_5',
-      key,
-      base64UrlBytes(parts[2]),
-      encoder.encode(`${parts[0]}.${parts[1]}`)
-    );
-  } catch {
-    fail(401, 'Invalid access signature.');
-  }
-  if (!valid) fail(401, 'Invalid access signature.');
-
-  const email = String(claims.email || '').trim().toLowerCase();
-  if (!email || email.length > 254) fail(401, 'Access identity has no valid email.');
-  return email;
-}
-
-async function authenticatedUser(request, env, allowInvitation = false) {
-  const email = await verifyAccessAssertion(request, env);
-  const user = await env.DB.prepare(
-    'SELECT id, username, email, role, status FROM staff_users WHERE email = ? COLLATE NOCASE'
-  ).bind(email).first();
-  if (!user || (user.status !== 'ACTIVE' && !(allowInvitation && user.status === 'INVITED'))) {
-    fail(403, 'This identity is not an active staff account.');
-  }
-  return user;
 }
 
 function requireRole(user, allowed) {
@@ -249,7 +172,8 @@ async function updateTicket(request, env, user, ticketId) {
 async function listUsers(env, user) {
   requireRole(user, ['SUPER ADMIN']);
   const result = await env.DB.prepare(
-    'SELECT id, username, email, role, status, created_at FROM staff_users ORDER BY username LIMIT 250'
+    `SELECT id, username, contact_email AS email, role, status, created_at
+     FROM staff_users WHERE deleted_at IS NULL ORDER BY username LIMIT 250`
   ).all();
   return respond({ users: result.results });
 }
@@ -261,78 +185,11 @@ async function updateUserRole(request, env, user, userId) {
   if (!ROLES.has(role)) fail(400, 'Select a valid staff role.');
   const result = await env.DB.prepare(
     `UPDATE staff_users SET role = ?, updated_at = ?
-     WHERE id = ? AND (role <> 'SUPER ADMIN' OR ? = 'SUPER ADMIN' OR
-       (SELECT COUNT(*) FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE') > 1)`
+     WHERE id = ? AND deleted_at IS NULL AND (role <> 'SUPER ADMIN' OR ? = 'SUPER ADMIN' OR
+       (SELECT COUNT(*) FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE' AND deleted_at IS NULL) > 1)`
   ).bind(role, now(), userId, role).run();
   if (!result.meta.changes) fail(409, 'Role was not changed. The account may not exist or may be the last active Super Admin.');
   await audit(env, user.id, 'staff.role_changed', 'staff_user', userId, { role });
-  return respond({ ok: true });
-}
-
-async function inviteUser(request, env, user) {
-  requireRole(user, ['SUPER ADMIN']);
-  if (!env.RESEND_API_KEY || !env.FROM_EMAIL) fail(503, 'Invitation email is not configured. Set RESEND_API_KEY and FROM_EMAIL.');
-  const body = await readJson(request);
-  const username = text(body.username, 40);
-  const email = text(body.email, 254).toLowerCase();
-  const role = text(body.role, 32);
-  if (!/^[a-zA-Z0-9._-]{2,40}$/.test(username) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !ROLES.has(role)) {
-    fail(400, 'Enter a valid username, email, and role.');
-  }
-  const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
-  const token = Array.from(tokenBytes, byte => byte.toString(16).padStart(2, '0')).join('');
-  const tokenHash = await sha256(token);
-  const userId = id();
-  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-  const timestamp = now();
-  try {
-    await env.DB.prepare(
-      `INSERT INTO staff_users (id, username, email, role, status, invite_token_hash, invite_expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'INVITED', ?, ?, ?, ?)`
-    ).bind(userId, username, email, role, tokenHash, expiresAt, timestamp, timestamp).run();
-  } catch (error) {
-    if (String(error.message).includes('UNIQUE')) fail(409, 'Username or email is already registered.');
-    throw error;
-  }
-
-  const inviteUrl = new URL('/staff.html', request.url);
-  inviteUrl.hash = `invite=${token}`;
-  let emailResponse;
-  try {
-    emailResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: env.FROM_EMAIL,
-        to: [email],
-        subject: 'Axium Cyber staff invitation',
-        text: `Hello ${username},\n\nYou have been invited to the Axium Cyber staff portal as ${role}. This link expires in 48 hours:\n\n${inviteUrl.href}\n\nSign in through the organization access gateway to accept the invitation.`
-      })
-    });
-  } catch {
-    emailResponse = null;
-  }
-  if (!emailResponse?.ok) {
-    await env.DB.prepare("UPDATE staff_users SET status = 'SUSPENDED', invite_token_hash = NULL, invite_expires_at = NULL, updated_at = ? WHERE id = ?")
-      .bind(now(), userId).run();
-    fail(502, 'The invitation email could not be sent. The pending account was disabled.');
-  }
-  await audit(env, user.id, 'staff.invited', 'staff_user', userId, { role });
-  return respond({ id: userId, status: 'INVITED' }, 201);
-}
-
-async function acceptInvitation(request, env, email) {
-  const body = await readJson(request);
-  const token = text(body.token, 128);
-  if (!/^[a-f0-9]{64}$/.test(token)) fail(400, 'Invalid invitation token.');
-  const tokenHash = await sha256(token);
-  const result = await env.DB.prepare(
-    `UPDATE staff_users SET status = 'ACTIVE', invite_token_hash = NULL, invite_expires_at = NULL, updated_at = ?
-     WHERE email = ? COLLATE NOCASE AND status = 'INVITED' AND invite_token_hash = ? AND invite_expires_at > ?`
-  ).bind(now(), email, tokenHash, now()).run();
-  if (!result.meta.changes) fail(400, 'Invitation is invalid, expired, or belongs to another identity.');
-  const user = await env.DB.prepare('SELECT id FROM staff_users WHERE email = ? COLLATE NOCASE').bind(email).first();
-  await audit(env, user.id, 'staff.invitation_accepted', 'staff_user', user.id);
   return respond({ ok: true });
 }
 
@@ -466,7 +323,7 @@ async function addEvidence(request, env, user, caseId) {
   await env.DB.prepare(
     `INSERT INTO evidence_custody_events (id, evidence_id, action, to_custodian, performed_by, event_at, event_hash)
      VALUES (?, ?, 'EVIDENCE_REGISTERED', ?, ?, ?, ?)`
-  ).bind(id(), evidenceId, user.email, user.id, timestamp, eventHash).run();
+  ).bind(id(), evidenceId, user.contact_email || user.username, user.id, timestamp, eventHash).run();
   await audit(env, user.id, 'evidence.registered', 'evidence_item', evidenceId, { caseId, sha256: hash });
   return respond({ id: evidenceId }, 201);
 }
@@ -514,18 +371,23 @@ async function route(request, env) {
   if (!path.startsWith('/api/')) fail(404, 'Not found.');
   if (method !== 'GET' && method !== 'HEAD') requireOrigin(request);
 
-  const isAccept = path === '/api/invites/accept' && method === 'POST';
-  const user = await authenticatedUser(request, env, isAccept);
-  if (path === '/api/me' && method === 'GET') return respond({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
-  if (isAccept) return acceptInvitation(request, env, user.email);
-  if (user.status !== 'ACTIVE') fail(403, 'Accept your staff invitation before continuing.');
+  if (path === '/api/setup/status' && method === 'GET') return setupStatus(env);
+  if (path === '/api/bootstrap' && method === 'POST') return bootstrapAdmin(request, env);
+  if (path === '/api/auth/login' && method === 'POST') return login(request, env);
+
+  const user = await authenticatedUser(request, env);
+  if (path === '/api/me' && method === 'GET') return currentSession(request, env, user);
+  if (method !== 'GET' && method !== 'HEAD') await requireCsrf(request, user);
+  if (path === '/api/auth/logout' && method === 'POST') return logout(request, env, user);
+  if (path === '/api/auth/change-password' && method === 'POST') return changePassword(request, env, user);
+  if (user.must_change_password && path !== '/api/auth/logout') fail(428, 'Change your temporary password before continuing.');
 
   if (path === '/api/customers' && method === 'GET') return listCustomers(env, user, url);
   if (path === '/api/customers' && method === 'POST') return createCustomer(request, env, user);
   if (path === '/api/tickets' && method === 'GET') return listTickets(env, user, url);
   if (path === '/api/tickets' && method === 'POST') return createTicket(request, env, user);
   if (path === '/api/users' && method === 'GET') return listUsers(env, user);
-  if (path === '/api/users' && method === 'POST') return inviteUser(request, env, user);
+  if (path === '/api/users' && method === 'POST') return createStaffUser(request, env, user);
   if (path === '/api/engagements' && method === 'GET') return listEngagements(env, user);
   if (path === '/api/engagements' && method === 'POST') return createEngagement(request, env, user);
   if (path === '/api/engagement-customers' && method === 'GET') return listEngagementCustomers(env, user);
@@ -537,10 +399,9 @@ async function route(request, env) {
   if (ticketMatch && method === 'PATCH') return updateTicket(request, env, user, ticketMatch[1]);
   const userMatch = path.match(/^\/api\/users\/([\w-]+)$/);
   if (userMatch && method === 'PATCH') return updateUserRole(request, env, user, userMatch[1]);
+  if (userMatch && method === 'DELETE') return deleteStaffUser(env, user, userMatch[1]);
   const noteMatch = path.match(/^\/api\/tickets\/([\w-]+)\/notes$/);
   if (noteMatch && method === 'POST') return addSupportNote(request, env, user, noteMatch[1]);
-  const inviteAcceptMatch = path.match(/^\/api\/invites\/accept$/);
-  if (inviteAcceptMatch && method === 'POST') return acceptInvitation(request, env, user.email);
   const caseEvidenceMatch = path.match(/^\/api\/forensics\/cases\/([\w-]+)\/evidence$/);
   if (caseEvidenceMatch && method === 'POST') return addEvidence(request, env, user, caseEvidenceMatch[1]);
   const custodyMatch = path.match(/^\/api\/forensics\/evidence\/([\w-]+)\/custody$/);
@@ -563,4 +424,278 @@ export async function onRequest({ request, env }) {
     console.error('Staff API request failed', error);
     return respond({ error: 'The request could not be completed.' }, 500);
   }
+}
+
+function randomHex(size = 32) {
+  return Array.from(crypto.getRandomValues(new Uint8Array(size)), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function fromHex(value) {
+  return Uint8Array.from(value.match(/.{2}/g) || [], pair => Number.parseInt(pair, 16));
+}
+
+function sameSecret(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string' || left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return difference === 0;
+}
+
+function validPassword(value) {
+  return typeof value === 'string' && value.length >= 12 && value.length <= 128 && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+async function derivePassword(password, saltHex) {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: fromHex(saltHex), iterations: PASSWORD_ITERATIONS, hash: 'SHA-256' },
+    key,
+    256
+  );
+  return Array.from(new Uint8Array(bits), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function cookieValue(request, name) {
+  const cookies = request.headers.get('Cookie') || '';
+  const match = cookies.split(';').map(part => part.trim()).find(part => part.startsWith(`${name}=`));
+  return match ? match.slice(name.length + 1) : '';
+}
+
+function sessionCookieName(request) {
+  return new URL(request.url).protocol === 'https:' ? '__Host-axium_session' : 'axium_session';
+}
+
+function sessionCookie(request, token, maxAge = SESSION_SECONDS) {
+  const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
+  return `${sessionCookieName(request)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`;
+}
+
+async function createSession(request, env, user) {
+  const token = randomHex();
+  const csrfToken = randomHex(24);
+  const expiresAt = new Date(Date.now() + SESSION_SECONDS * 1000).toISOString();
+  await env.DB.prepare(
+    'INSERT INTO staff_sessions (session_hash, staff_user_id, csrf_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(await sha256(token), user.id, await sha256(csrfToken), expiresAt, now()).run();
+  return respond({
+    user: { id: user.id, username: user.username, email: user.contact_email || null, role: user.role },
+    csrfToken,
+    mustChangePassword: Boolean(user.must_change_password)
+  }, 200, { 'Set-Cookie': sessionCookie(request, token) });
+}
+
+async function authenticatedUser(request, env) {
+  const token = cookieValue(request, sessionCookieName(request)) || cookieValue(request, 'axium_session');
+  if (!token) fail(401, 'Sign in with your staff username and password.');
+  const user = await env.DB.prepare(
+      `SELECT u.id, u.username, u.contact_email, u.role, u.status, u.must_change_password,
+        u.password_salt, u.password_hash, s.session_hash, s.csrf_hash
+     FROM staff_sessions s JOIN staff_users u ON u.id = s.staff_user_id
+     WHERE s.session_hash = ? AND s.expires_at > ? AND u.status = 'ACTIVE' AND u.deleted_at IS NULL`
+  ).bind(await sha256(token), now()).first();
+  if (!user) fail(401, 'Staff session expired. Sign in again.');
+  return user;
+}
+
+async function requireCsrf(request, user) {
+  const token = request.headers.get('X-CSRF-Token') || '';
+  if (!token || !sameSecret(await sha256(token), user.csrf_hash)) fail(403, 'Session verification failed. Refresh and try again.');
+}
+
+function staffInput(body) {
+  const username = text(body.username, 40);
+  const email = text(body.email, 254).toLowerCase() || null;
+  if (!/^[a-zA-Z0-9._-]{2,40}$/.test(username)) fail(400, 'Username must be 2-40 letters, numbers, dots, underscores, or hyphens.');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, 'Email address is invalid.');
+  if (!validPassword(body.password)) fail(400, 'Password must be 12-128 characters with no control characters.');
+  return { username, email, password: body.password };
+}
+
+function internalEmail(userId) {
+  return `staff-${userId}@accounts.invalid`;
+}
+
+async function setupStatus(env) {
+  const admin = await env.DB.prepare(
+    `SELECT id FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE'
+      AND deleted_at IS NULL AND password_hash IS NOT NULL LIMIT 1`
+  ).first();
+  return respond({ setupRequired: !admin, setupConfigured: Boolean(env.BOOTSTRAP_SECRET) });
+}
+
+async function bootstrapAdmin(request, env) {
+  if (!env.BOOTSTRAP_SECRET || env.BOOTSTRAP_SECRET.length < 32) fail(503, 'First-admin setup secret is not configured.');
+  const body = await readJson(request);
+  if (!sameSecret(body.setupSecret, env.BOOTSTRAP_SECRET)) fail(403, 'First-admin setup secret is invalid.');
+  const { username, email, password } = staffInput(body);
+  const existingAdmin = await env.DB.prepare(
+    `SELECT id FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE'
+      AND deleted_at IS NULL AND password_hash IS NOT NULL LIMIT 1`
+  ).first();
+  if (existingAdmin) fail(409, 'First-admin setup is already complete.');
+
+  const salt = randomHex(16);
+  const passwordHash = await derivePassword(password, salt);
+  const existingRecord = await env.DB.prepare(
+    `SELECT id FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE'
+      AND deleted_at IS NULL ORDER BY created_at LIMIT 1`
+  ).first();
+  let adminId;
+  if (existingRecord) {
+    adminId = existingRecord.id;
+    const result = await env.DB.prepare(
+      `UPDATE staff_users SET username = ?, email = ?, contact_email = ?, password_salt = ?, password_hash = ?,
+              must_change_password = 0, updated_at = ? WHERE id = ? AND password_hash IS NULL AND deleted_at IS NULL`
+    ).bind(username, email || internalEmail(adminId), email, salt, passwordHash, now(), adminId).run();
+    if (!result.meta.changes) fail(409, 'First-admin setup was already completed.');
+  } else {
+    adminId = id();
+    const result = await env.DB.prepare(
+      `INSERT INTO staff_users (id, username, email, contact_email, role, status, password_salt, password_hash, must_change_password, created_at, updated_at)
+       SELECT ?, ?, ?, ?, 'SUPER ADMIN', 'ACTIVE', ?, ?, 0, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE'
+           AND deleted_at IS NULL AND password_hash IS NOT NULL
+       )`
+    ).bind(adminId, username, email || internalEmail(adminId), email, salt, passwordHash, now(), now()).run();
+    if (!result.meta.changes) fail(409, 'First-admin setup was already completed.');
+  }
+  await audit(env, adminId, 'staff.bootstrap_completed', 'staff_user', adminId);
+  const admin = await env.DB.prepare(
+    'SELECT id, username, contact_email, role, must_change_password FROM staff_users WHERE id = ?'
+  ).bind(adminId).first();
+  return createSession(request, env, admin);
+}
+
+async function recordLoginFailure(env, attemptKey) {
+  const timestamp = Date.now();
+  const current = await env.DB.prepare('SELECT failure_count, window_started_at, locked_until FROM login_attempts WHERE attempt_key = ?')
+    .bind(attemptKey).first();
+  const windowMs = 15 * 60 * 1000;
+  const freshWindow = !current || timestamp - Date.parse(current.window_started_at) >= windowMs;
+  const failureCount = freshWindow ? 1 : current.failure_count + 1;
+  const windowStartedAt = freshWindow ? new Date(timestamp).toISOString() : current.window_started_at;
+  const lockedUntil = failureCount >= 5 ? new Date(timestamp + windowMs).toISOString() : null;
+  await env.DB.prepare(
+    `INSERT INTO login_attempts (attempt_key, failure_count, window_started_at, locked_until, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(attempt_key) DO UPDATE SET failure_count = excluded.failure_count,
+       window_started_at = excluded.window_started_at, locked_until = excluded.locked_until, updated_at = excluded.updated_at`
+  ).bind(attemptKey, failureCount, windowStartedAt, lockedUntil, now()).run();
+}
+
+async function login(request, env) {
+  const body = await readJson(request);
+  const username = text(body.username, 40);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!username || password.length > 128) fail(400, 'Enter a valid username and password.');
+  const clientAddress = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const attemptKey = await sha256(`${clientAddress}\n${username.toLowerCase()}`);
+  const attempt = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE attempt_key = ?').bind(attemptKey).first();
+  if (attempt?.locked_until && Date.parse(attempt.locked_until) > Date.now()) fail(429, 'Too many failed attempts. Try again in 15 minutes.');
+
+  const user = await env.DB.prepare(
+    `SELECT id, username, contact_email, role, status, password_salt, password_hash, must_change_password
+     FROM staff_users WHERE username = ? COLLATE NOCASE AND deleted_at IS NULL`
+  ).bind(username).first();
+  const candidatePassword = password.length <= 128 ? password : 'invalid-password-input';
+  const candidateHash = await derivePassword(candidatePassword, user?.password_salt || '00000000000000000000000000000000');
+  const valid = user && user.status === 'ACTIVE' && user.password_hash && sameSecret(candidateHash, user.password_hash) && validPassword(password);
+  if (!valid) {
+    await recordLoginFailure(env, attemptKey);
+    fail(401, 'Username or password is incorrect.');
+  }
+
+  await env.DB.prepare('DELETE FROM login_attempts WHERE attempt_key = ?').bind(attemptKey).run();
+  return createSession(request, env, user);
+}
+
+async function currentSession(request, env, user) {
+  const csrfToken = randomHex(24);
+  await env.DB.prepare('UPDATE staff_sessions SET csrf_hash = ? WHERE session_hash = ?')
+    .bind(await sha256(csrfToken), user.session_hash).run();
+  return respond({
+    user: { id: user.id, username: user.username, email: user.contact_email || null, role: user.role },
+    csrfToken,
+    mustChangePassword: Boolean(user.must_change_password)
+  });
+}
+
+async function changePassword(request, env, user) {
+  const body = await readJson(request);
+  if (!validPassword(body.newPassword)) fail(400, 'New password must be 12-128 characters with no control characters.');
+  const currentHash = await derivePassword(String(body.currentPassword || ''), user.password_salt || '00000000000000000000000000000000');
+  if (!user.password_hash || !sameSecret(currentHash, user.password_hash)) fail(401, 'Current password is incorrect.');
+  const salt = randomHex(16);
+  const passwordHash = await derivePassword(body.newPassword, salt);
+  await env.DB.prepare(
+    'UPDATE staff_users SET password_salt = ?, password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?'
+  ).bind(salt, passwordHash, now(), user.id).run();
+  await env.DB.prepare('DELETE FROM staff_sessions WHERE staff_user_id = ? AND session_hash <> ?')
+    .bind(user.id, user.session_hash).run();
+  await audit(env, user.id, 'staff.password_changed', 'staff_user', user.id);
+  return respond({ ok: true });
+}
+
+async function logout(request, env, user) {
+  await env.DB.prepare('DELETE FROM staff_sessions WHERE session_hash = ?').bind(user.session_hash).run();
+  return respond({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, '', 0) });
+}
+
+async function createStaffUser(request, env, admin) {
+  requireRole(admin, ['SUPER ADMIN']);
+  const body = await readJson(request);
+  const { username, email, password } = staffInput(body);
+  const role = text(body.role, 32);
+  if (!ROLES.has(role)) fail(400, 'Select a valid staff role.');
+  const userId = id();
+  const salt = randomHex(16);
+  const passwordHash = await derivePassword(password, salt);
+  try {
+    await env.DB.prepare(
+      `INSERT INTO staff_users (id, username, email, contact_email, role, status, password_salt, password_hash, must_change_password, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, 1, ?, ?)`
+    ).bind(userId, username, internalEmail(userId), email, role, salt, passwordHash, now(), now()).run();
+  } catch (error) {
+    if (String(error.message).includes('UNIQUE')) fail(409, 'That username is already in use.');
+    throw error;
+  }
+  await audit(env, admin.id, 'staff.created', 'staff_user', userId, { role });
+  let emailSent = false;
+  if (email && env.RESEND_API_KEY && env.FROM_EMAIL) {
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: env.FROM_EMAIL,
+          to: [email],
+          subject: 'Axium Cyber staff account created',
+          text: `A staff account was created for ${username}. Sign in at ${new URL('/staff.html', request.url).href}. Your administrator will provide the temporary password through a separate secure channel. You must change it at first sign-in.`
+        })
+      });
+      emailSent = response.ok;
+    } catch {
+      emailSent = false;
+    }
+  }
+  return respond({ id: userId, emailSent, mustChangePassword: true }, 201);
+}
+
+async function deleteStaffUser(env, admin, userId) {
+  requireRole(admin, ['SUPER ADMIN']);
+  if (admin.id === userId) fail(400, 'You cannot delete your own signed-in account.');
+  const deletedAt = now();
+  const result = await env.DB.prepare(
+    `UPDATE staff_users SET username = ?, email = ?, contact_email = NULL, role = 'TEAM MEMBER', status = 'SUSPENDED',
+            password_salt = NULL, password_hash = NULL, must_change_password = 1, invite_token_hash = NULL,
+            invite_expires_at = NULL, deleted_at = ?, updated_at = ?
+     WHERE id = ? AND deleted_at IS NULL AND
+       (role <> 'SUPER ADMIN' OR status <> 'ACTIVE' OR
+        (SELECT COUNT(*) FROM staff_users WHERE role = 'SUPER ADMIN' AND status = 'ACTIVE' AND deleted_at IS NULL) > 1)`
+  ).bind(`deleted-${userId.slice(0, 8)}`, `deleted-${userId}@accounts.invalid`, deletedAt, deletedAt, userId).run();
+  if (!result.meta.changes) fail(409, 'Account cannot be deleted. It may be missing, already deleted, or the last active Super Admin.');
+  await env.DB.prepare('DELETE FROM staff_sessions WHERE staff_user_id = ?').bind(userId).run();
+  await audit(env, admin.id, 'staff.deleted', 'staff_user', userId);
+  return respond({ ok: true, deletedAt });
 }

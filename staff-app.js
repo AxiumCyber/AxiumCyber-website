@@ -8,6 +8,7 @@ let staff = null;
 let customers = [];
 let tickets = [];
 let activeView = 'overview';
+let csrfToken = '';
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -27,6 +28,8 @@ async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('Accept', 'application/json');
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+  const method = String(options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) headers.set('X-CSRF-Token', csrfToken);
   const response = await fetch(path, { credentials: 'same-origin', ...options, headers });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || `Request failed (${response.status}).`);
@@ -112,8 +115,8 @@ function renderCustomers() {
 
 function renderUsers(users) {
   byId('userRows').innerHTML = users.length ? users.map(user =>
-    `<tr><td class="ticket-name">${escapeHtml(user.username)}</td><td>${escapeHtml(user.email)}</td><td><select class="role-switch staff-role" data-id="${escapeHtml(user.id)}" aria-label="Role for ${escapeHtml(user.username)}">${roleNames.map(role => `<option ${user.role === role ? 'selected' : ''}>${role}</option>`).join('')}</select></td><td><span class="pill ${user.status === 'ACTIVE' ? 'open' : 'waiting'}">${escapeHtml(user.status)}</span></td></tr>`
-  ).join('') : '<tr><td colspan="4" class="empty-state">No staff records.</td></tr>';
+    `<tr><td class="ticket-name">${escapeHtml(user.username)}</td><td>${escapeHtml(user.email || '—')}</td><td><select class="role-switch staff-role" data-id="${escapeHtml(user.id)}" aria-label="Role for ${escapeHtml(user.username)}">${roleNames.map(role => `<option ${user.role === role ? 'selected' : ''}>${role}</option>`).join('')}</select></td><td><span class="pill ${user.status === 'ACTIVE' ? 'open' : 'waiting'}">${escapeHtml(user.status)}</span></td><td><button class="button small warn delete-user" data-id="${escapeHtml(user.id)}">Delete</button></td></tr>`
+  ).join('') : '<tr><td colspan="5" class="empty-state">No staff records.</td></tr>';
 }
 
 function renderEngagements(engagements) {
@@ -173,57 +176,164 @@ async function loadView(name) {
   if (name === 'audit') renderAudit((await api('/api/audit')).events);
 }
 
-async function enterDashboard() {
-  enterButton.disabled = true;
+async function openDashboard() {
+  if (!staff || !roleNames.includes(staff.role)) throw new Error('Staff role is not configured. Contact your Super Admin.');
+  setNavigation();
+  byId('roleBadge').textContent = staff.role;
+  byId('staffGreeting').textContent = staff.username;
+  byId('serviceStatus').textContent = 'CONNECTED';
+  byId('serviceNote').textContent = 'Staff session verified';
+  await loadTickets();
+  await loadCustomers();
+  if (staff.role === 'SUPER ADMIN') renderAudit((await api('/api/audit')).events);
+  else renderAudit([]);
+  byId('accessProgress').style.width = '100%';
+  document.querySelector('.access-progress').setAttribute('aria-valuenow', '100');
+  byId('accessMessage').className = 'access-message granted';
+  byId('accessMessage').innerHTML = '<span class="access-check" aria-hidden="true">✓</span>Access granted';
+  setTimeout(() => {
+    loginView.classList.add('hidden');
+    appView.classList.remove('hidden');
+    showView('overview');
+  }, 350);
+}
+
+function showPasswordChange(currentPassword = '') {
+  byId('loginForm').classList.add('hidden');
+  byId('setupForm').classList.add('hidden');
+  byId('changePasswordForm').classList.remove('hidden');
+  byId('loginTitle').textContent = 'Change temporary password';
+  byId('loginDescription').textContent = 'Set a new password before entering the dashboard.';
+  byId('currentPassword').value = currentPassword;
+  byId('loginPassword').value = '';
+  byId('accessMessage').className = 'access-message granted';
+  byId('accessMessage').textContent = 'Your Super Admin requires a password change at first sign-in.';
+  setAccessProgress(100);
+}
+
+async function enterDashboard(event) {
+  event?.preventDefault();
   const message = byId('accessMessage');
   message.className = 'access-message';
-  message.textContent = 'Verifying organization access…';
-  setAccessProgress(18);
+  message.textContent = 'Verifying staff credentials…';
+  setAccessProgress(24);
+  enterButton.disabled = true;
   try {
-    const inviteToken = new URLSearchParams(location.hash.slice(1)).get('invite');
-    if (inviteToken) {
-      await api('/api/invites/accept', { method: 'POST', body: JSON.stringify({ token: inviteToken }) });
-      history.replaceState(null, '', `${location.pathname}${location.search}`);
+    if (staff && csrfToken) {
+      await openDashboard();
+      return;
     }
-    setAccessProgress(62);
-    const result = await api('/api/me');
+    const result = await api('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: byId('loginUsername').value, password: byId('loginPassword').value })
+    });
     staff = result.user;
-    if (!roleNames.includes(staff.role)) throw new Error('Staff role is not configured. Contact your administrator.');
-    setAccessProgress(100);
-    roleBadge.textContent = staff.role;
-    byId('staffGreeting').textContent = staff.username;
-    setNavigation();
-    message.className = 'access-message granted';
-    message.innerHTML = '<span class="access-check" aria-hidden="true">✓</span>Access granted';
-    byId('serviceStatus').textContent = 'CONNECTED';
-    byId('serviceNote').textContent = 'Organization identity and API verified';
-    await loadTickets();
-    await loadCustomers();
-    if (staff.role === 'SUPER ADMIN') {
-      const { events } = await api('/api/audit');
-      renderAudit(events);
-    } else {
-      renderAudit([]);
+    csrfToken = result.csrfToken;
+    setAccessProgress(72);
+    byId('currentPassword').value = '';
+    byId('replacementPassword').value = '';
+    byId('confirmPassword').value = '';
+    if (result.mustChangePassword) {
+      showPasswordChange(byId('loginPassword').value);
+      return;
     }
-    setTimeout(() => {
-      loginView.classList.add('hidden');
-      appView.classList.remove('hidden');
-      showView('overview');
-    }, 450);
+    byId('loginPassword').value = '';
+    await openDashboard();
   } catch (error) {
     setAccessProgress(100);
     message.className = 'access-message denied';
     message.textContent = error.message;
     byId('serviceStatus').textContent = 'UNAVAILABLE';
-    byId('serviceNote').textContent = 'Access was not granted';
+    byId('serviceNote').textContent = 'Sign-in was not completed';
+  } finally {
     enterButton.disabled = false;
+  }
+}
+
+async function bootstrapAdmin(event) {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  byId('accessMessage').textContent = 'Creating the first Super Admin…';
+  setAccessProgress(35);
+  try {
+    const result = await api('/api/bootstrap', { method: 'POST', body: JSON.stringify({
+      setupSecret: byId('setupSecret').value,
+      username: byId('setupUsername').value,
+      password: byId('setupPassword').value,
+      email: byId('setupEmail').value
+    }) });
+    staff = result.user;
+    csrfToken = result.csrfToken;
+    byId('setupForm').reset();
+    await openDashboard();
+  } catch (error) {
+    byId('accessMessage').className = 'access-message denied';
+    byId('accessMessage').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function initializeSignIn() {
+  try {
+    const setup = await api('/api/setup/status');
+    if (setup.setupRequired) {
+      byId('loginForm').classList.add('hidden');
+      byId('setupForm').classList.remove('hidden');
+      byId('loginTitle').textContent = 'Initial Super Admin setup';
+      byId('loginDescription').textContent = setup.setupConfigured ? 'Create the first administrator account.' : 'Configure the BOOTSTRAP_SECRET Pages secret before setup.';
+      byId('setupForm').querySelector('button[type="submit"]').disabled = !setup.setupConfigured;
+      return;
+    }
+    try {
+      const session = await api('/api/me');
+      staff = session.user;
+      csrfToken = session.csrfToken;
+      if (session.mustChangePassword) showPasswordChange();
+      else await openDashboard();
+    } catch {
+      byId('loginForm').classList.remove('hidden');
+    }
+  } catch (error) {
+    byId('accessMessage').className = 'access-message denied';
+    byId('accessMessage').textContent = error.message;
   }
 }
 
 document.querySelectorAll('.nav-item').forEach(button => button.addEventListener('click', () => showView(button.dataset.view)));
 document.querySelectorAll('[data-goto]').forEach(button => button.addEventListener('click', () => showView(button.dataset.goto)));
-enterButton.addEventListener('click', enterDashboard);
-byId('signOut').addEventListener('click', () => { location.href = '/cdn-cgi/access/logout'; });
+byId('loginForm').addEventListener('submit', enterDashboard);
+byId('setupForm').addEventListener('submit', bootstrapAdmin);
+byId('changePasswordForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const nextPassword = byId('replacementPassword').value;
+  if (nextPassword !== byId('confirmPassword').value) {
+    toast('New passwords do not match.');
+    return;
+  }
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await api('/api/auth/change-password', { method: 'POST', body: JSON.stringify({
+      currentPassword: byId('currentPassword').value,
+      newPassword: nextPassword
+    }) });
+    byId('currentPassword').value = '';
+    byId('replacementPassword').value = '';
+    byId('confirmPassword').value = '';
+    await openDashboard();
+  } catch (error) {
+    byId('accessMessage').className = 'access-message denied';
+    byId('accessMessage').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+byId('signOut').addEventListener('click', async () => {
+  try { await api('/api/auth/logout', { method: 'POST', body: '{}' }); }
+  finally { location.reload(); }
+});
 byId('ticketSearch').addEventListener('input', renderTickets);
 byId('ticketFilter').addEventListener('change', renderTickets);
 byId('customerSearch').addEventListener('input', renderCustomers);
@@ -268,15 +378,16 @@ document.addEventListener('keydown', event => { if (event.key === 'Escape') clos
 byId('userForm').addEventListener('submit', async event => {
   event.preventDefault();
   try {
-    await api('/api/users', { method: 'POST', body: JSON.stringify({
+    const result = await api('/api/users', { method: 'POST', body: JSON.stringify({
       username: byId('newUsername').value,
+      password: byId('newPassword').value,
       email: byId('newEmail').value,
       role: byId('newRole').value
     }) });
     event.currentTarget.reset();
     closeModal();
     if (activeView === 'team') await loadView('team');
-    toast('Secure invitation sent.');
+    toast(result.emailSent ? 'Account created. A notice was emailed; share the temporary password separately.' : 'Account created. Share the temporary password through a separate secure channel.');
   } catch (error) { toast(error.message); }
 });
 byId('userRows').addEventListener('change', async event => {
@@ -291,6 +402,15 @@ byId('userRows').addEventListener('change', async event => {
     toast(error.message);
     await loadView('team');
   }
+});
+byId('userRows').addEventListener('click', async event => {
+  const button = event.target.closest('.delete-user');
+  if (!button || !confirm('Delete this staff account? Its sessions will be revoked and personal account details anonymized.')) return;
+  try {
+    await api(`/api/users/${encodeURIComponent(button.dataset.id)}`, { method: 'DELETE', body: '{}' });
+    await loadView('team');
+    toast('Staff account deleted. Audit and record references are retained.');
+  } catch (error) { toast(error.message); }
 });
 
 byId('engagementForm').addEventListener('submit', async event => {
@@ -372,4 +492,5 @@ byId('saveNotes').addEventListener('click', () => {
 document.querySelectorAll('[data-clear]').forEach(button => button.addEventListener('click', () => { byId(button.dataset.clear).value = ''; }));
 
 document.getElementById('serviceStatus').textContent = 'READY';
-document.getElementById('serviceNote').textContent = 'Enter Dashboard to verify access';
+document.getElementById('serviceNote').textContent = 'Sign in to verify your staff account';
+initializeSignIn();
