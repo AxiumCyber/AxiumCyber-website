@@ -8,7 +8,7 @@ A responsive public website and Cloudflare-backed staff operations portal for Ax
 - `staff.html` and `staff-app.js` — staff dashboard and API client
 - `functions/api/[[path]].js` — Cloudflare Pages API with local sessions, password hashing, and server-side role checks
 - `migrations/0001_initial.sql` and `migrations/0002_local_staff_auth.sql` — D1 schema for staff credentials, customers, support, authorized engagements, and forensic metadata
-- `wrangler.toml` — Pages configuration, D1 binding, and non-secret variables; replace its placeholders before deploying
+- `wrangler.toml` — Pages configuration, D1/KV bindings, and non-secret variables; replace its placeholders before deploying
 - `assets/axium-hero.png` — Axium Cyber hero artwork
 - `_headers` — HTTP security headers and staff-page Content Security Policy
 - `_redirects` — optional Pages redirects
@@ -21,7 +21,7 @@ The public site is static and can be previewed by opening `index.html` in a brow
 
 ## Requirements
 
-- A Cloudflare account with Workers & Pages and D1 available
+- A Cloudflare account with Workers & Pages, D1, and Workers KV available
 - Node.js and npm if using Wrangler from PowerShell
 - A verified Resend sender and API key if staff email notices are desired (email is optional)
 
@@ -29,15 +29,22 @@ The public site is static and can be previewed by opening `index.html` in a brow
 
 1. In Cloudflare, create a Pages project connected to this GitHub repository. Set the production branch to your deployment branch, framework preset to `None`, build command to blank, and build output directory to `.` (the repository root). The repository includes `wrangler.toml` and a Pages Functions route under `functions/`.
 2. Create a D1 database named `axium-cyber-portal`. Alternatively, from PowerShell in the repository, run `npx wrangler d1 create axium-cyber-portal`. Copy the returned database ID into `database_id` in `wrangler.toml`; replace `REPLACE_WITH_D1_DATABASE_ID`.
-3. Do not put Cloudflare Access in front of `/staff.html`, `/staff-app.js`, or `/api/*`; the portal authenticates staff with its own username/password sessions so staff email can be optional.
-4. Create a strong one-time bootstrap secret locally. In PowerShell, generate one and enter it when Wrangler prompts; do not commit it or paste it into source files:
+3. Create a KV namespace for the non-sensitive security-tool catalog cache:
+
+   ```powershell
+   npx wrangler kv namespace create axium-portal-cache
+   ```
+
+   Copy the returned namespace ID into the `PORTAL_CACHE` `id` in `wrangler.toml`, replacing `REPLACE_WITH_KV_NAMESPACE_ID`. D1 remains the source of truth for accounts, password hashes, sessions, customers, tickets, and audit records; do not move these to KV.
+4. Do not put Cloudflare Access in front of `/staff.html`, `/staff-app.js`, or `/api/*`; the portal authenticates staff with its own username/password sessions so staff email can be optional.
+5. Create a strong one-time bootstrap secret locally. In PowerShell, generate one and enter it when Wrangler prompts; do not commit it or paste it into source files:
 
    ```powershell
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    npx wrangler pages secret put BOOTSTRAP_SECRET --project-name=axium-cyber-website
    ```
 
-5. If staff email notices are wanted, set `FROM_EMAIL` in `wrangler.toml` to a sender verified by Resend and store the API key as a Pages secret. Never put the key in HTML, JavaScript, or Git:
+6. If staff email notices are wanted, set `FROM_EMAIL` in `wrangler.toml` to a sender verified by Resend and store the API key as a Pages secret. Never put the key in HTML, JavaScript, or Git:
 
    ```powershell
    npx wrangler pages secret put RESEND_API_KEY --project-name=axium-cyber-website
@@ -45,7 +52,7 @@ The public site is static and can be previewed by opening `index.html` in a brow
 
    A personal mailbox may not be accepted as a sender. Use an address/domain verified by your email provider.
 
-Cloudflare dashboard labels can change. Before deploying, confirm the Pages project is using the repository root, the D1 binding is named `DB`, and the production Pages environment has the bootstrap secret (and mail secret if used).
+Cloudflare dashboard labels can change. Before deploying, confirm the Pages project is using the repository root, the D1 binding is named `DB`, the KV binding is named `PORTAL_CACHE`, and the production Pages environment has the bootstrap secret (and mail secret if used).
 
 ## Apply the Database Schema
 

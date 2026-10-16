@@ -410,7 +410,16 @@ async function route(request, env) {
   if (approveMatch && method === 'POST') return approveEngagement(env, user, approveMatch[1]);
   if (path === '/api/security-tools' && method === 'GET') {
     requireRole(user, ['SUPER ADMIN', 'TECHNICAL TEAM']);
-    return respond({ execution: 'DISABLED', categories: [...TEST_CATEGORIES], note: 'Tool execution requires a separately deployed, network-isolated runner.' });
+    const cacheKey = 'security-tool-catalog:v1';
+    const cached = await env.PORTAL_CACHE?.get(cacheKey, 'json');
+    if (cached) return respond(cached);
+    const catalog = {
+      execution: 'DISABLED',
+      categories: [...TEST_CATEGORIES],
+      note: 'Tool execution requires a separately deployed, network-isolated runner.'
+    };
+    await env.PORTAL_CACHE?.put(cacheKey, JSON.stringify(catalog), { expirationTtl: 86400 });
+    return respond(catalog);
   }
   if (path === '/api/test-runs' && method === 'POST') fail(503, 'No isolated test runner is configured. Tests are not executed by this portal.');
   return fail(404, 'Not found.');

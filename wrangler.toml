@@ -3,10 +3,14 @@ compatibility_date = "2025-04-01"
 pages_build_output_dir = "."
 
 [vars]
-FROM_EMAIL = "Axium Cyber <staff@your-verified-domain.example>"
+FROM_EMAIL = "Axium Cyber <staff@your-verified-domain.com>"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "axium-cyber-portal"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
 migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "PORTAL_CACHE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
