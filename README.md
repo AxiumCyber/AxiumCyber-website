@@ -66,7 +66,15 @@ The dashboard username is `admin`; sign-in and MFA are handled by Cloudflare Acc
 
 ## Deploy and Verify
 
-For Git integration, push the configuration and migration to the production branch; Pages will deploy on each push. To deploy manually after creating the Pages project and applying its bindings/secrets:
+This repository is a **Cloudflare Pages** project, not a Worker script. Do not set the build/deploy command to `npx wrangler deploy`; that command expects a Worker entry point and fails with “Missing entry-point to Worker script or to assets directory.”
+
+For a Pages Git integration, leave the build command blank and set the output directory to `.`; Pages handles deployment on each push. If your build system has a separate **Deploy command** field, use:
+
+```powershell
+npx wrangler pages deploy . --project-name=axium-cyber-website
+```
+
+To deploy manually from PowerShell after creating the Pages project and applying its bindings/secrets, run the same command from the repository root:
 
 ```powershell
 npx wrangler pages deploy . --project-name=axium-cyber-website
