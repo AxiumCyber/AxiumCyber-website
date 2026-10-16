@@ -68,13 +68,15 @@ The dashboard username is `admin`; sign-in and MFA are handled by Cloudflare Acc
 
 This repository is a **Cloudflare Pages** project, not a Worker script. Do not set the build/deploy command to `npx wrangler deploy`; that command expects a Worker entry point and fails with “Missing entry-point to Worker script or to assets directory.”
 
-For a Pages Git integration, leave the build command blank and set the output directory to `.`; Pages handles deployment on each push. If your build system has a separate **Deploy command** field, use:
+For native Pages Git integration, leave the build command blank and set the output directory to `.`. Pages builds and deploys automatically on each push; do not add a custom `wrangler deploy` command.
+
+If your repository is instead connected through a build system that requires a separate **Deploy command**, keep automatic push triggers enabled and set that command to:
 
 ```powershell
 npx wrangler pages deploy . --project-name=axium-cyber-website
 ```
 
-To deploy manually from PowerShell after creating the Pages project and applying its bindings/secrets, run the same command from the repository root:
+To run a one-off manual deployment from PowerShell after creating the Pages project and applying its bindings/secrets, use the same command from the repository root:
 
 ```powershell
 npx wrangler pages deploy . --project-name=axium-cyber-website
