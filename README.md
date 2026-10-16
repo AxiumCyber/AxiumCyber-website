@@ -78,25 +78,11 @@ Super Admin-created accounts also require a 12-128 character temporary password 
 
 There is no public password-reset endpoint. A Super Admin must provision a replacement account or follow a separately secured administrative recovery procedure.
 
-## Deploy and Verify
+## Automatic Deploy and Verify
 
-This repository is a **Cloudflare Pages** project, not a Worker script. Do not set the build/deploy command to `npx wrangler deploy`; that command expects a Worker entry point and fails with “Missing entry-point to Worker script or to assets directory.”
+Use Cloudflare Pages Git integration. Set the production branch to your deployment branch, leave the build command blank, and set the output directory to `.`. Each push to that branch automatically builds and deploys the site; no custom deploy command is needed.
 
-For native Pages Git integration, leave the build command blank and set the output directory to `.`. Pages builds and deploys automatically on each push; do not add a custom `wrangler deploy` command.
-
-If your repository is instead connected through a build system that requires a separate **Deploy command**, keep automatic push triggers enabled and set that command to:
-
-```powershell
-npx wrangler pages deploy . --project-name=axium-cyber-website
-```
-
-To run a one-off manual deployment from PowerShell after creating the Pages project and applying its bindings/secrets, use the same command from the repository root:
-
-```powershell
-npx wrangler pages deploy . --project-name=axium-cyber-website
-```
-
-Then verify the deployment:
+After the automatic deployment completes, verify:
 
 1. Open `/staff.html`; the staff sign-in form should appear.
 2. Sign in with an active username/password. The progress indicator should show **Access granted** only after the API verifies the password and creates a session.
