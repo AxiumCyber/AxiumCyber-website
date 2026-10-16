@@ -1,2 +1,1 @@
-# Static homepage; preserve normal asset paths.
-/* /index.html 200
+# Normal homepage serving; no catch-all redirect needed.
