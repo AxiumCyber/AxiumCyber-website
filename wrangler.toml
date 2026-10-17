@@ -12,5 +12,5 @@ database_id = "89638755-b098-493e-8585-d682f3aa04b2"
 migrations_dir = "migrations"
 
 [[kv_namespaces]]
-binding = "PORTAL_CACHE"
+binding = "axium-portal-cache"
 id = "cd128fed86e14606907bc32f00117c76"
