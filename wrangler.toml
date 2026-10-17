@@ -8,9 +8,9 @@ FROM_EMAIL = "Axium Cyber <staff@your-verified-domain.com>"
 [[d1_databases]]
 binding = "DB"
 database_name = "axium-cyber-portal"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "89638755-b098-493e-8585-d682f3aa04b2"
 migrations_dir = "migrations"
 
 [[kv_namespaces]]
 binding = "PORTAL_CACHE"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "cd128fed86e14606907bc32f00117c76"
