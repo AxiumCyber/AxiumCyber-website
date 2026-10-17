@@ -27,7 +27,7 @@ The public site is static and can be previewed by opening `index.html` in a brow
 
 ## Browser-Only Cloudflare Setup
 
-1. In Cloudflare, open **Workers & Pages** and create a Pages project connected to this GitHub repository. Choose the production branch, set the framework to **None**, leave the build command blank, and set the build output directory to `.`. Leave automatic Git deployments enabled.
+1. In Cloudflare, open **Workers & Pages** and create a Pages project connected to this GitHub repository. Choose the production branch, set the framework to **None**, leave **Disable builds** off, leave both the build command and deploy command blank, use the repository root, and set the build output directory to `.`. Leave automatic Git deployments enabled. Do not set a custom deploy command such as `wrangler pages deploy`; Pages handles the Git deployment automatically.
 2. In **Storage & databases → D1**, create a database named `axium-cyber-portal`. Copy its database ID.
 3. In **Storage & databases → Workers KV**, create a namespace named `axium-portal-cache`. Copy its namespace ID. KV is used only to cache the non-sensitive security-tool catalog; D1 remains authoritative for accounts, password hashes, sessions, customers, tickets, and audit records.
 4. In this repository, open `wrangler.toml` and replace `REPLACE_WITH_D1_DATABASE_ID` and `REPLACE_WITH_KV_NAMESPACE_ID` with the IDs from Cloudflare. Keep the binding names `DB` and `PORTAL_CACHE`. Push this config change to the production branch; Pages will deploy automatically.
